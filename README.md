@@ -9,8 +9,6 @@ The original SC4Ed was developed by [RedGuyyyy](https://github.com/RedGuyyyy?tab
 - `src/app/` - the ImGui editor application.
 - `src/core/` - the retained SC4Ed ROM/core code used by the app.
 - `third_party/imgui/` - the minimal Dear ImGui files and Win32/DX11 backend files used by the editor.
-- `docs/` - migration notes and split-up plans.
-- `assets/samples/` - sample PNG/Aseprite files used while testing import and palette workflows.
 - `runtime/` - local runtime DLLs such as `retro.dll`. DLLs are ignored and should not be committed.
 
 ROM files are intentionally ignored and should not be committed.
