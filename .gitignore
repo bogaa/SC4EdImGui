@@ -1,46 +1,53 @@
-# Compiled Object files
+# Build output
+/build/
+**/Debug/
+**/Release/
+**/x64/
+**/*.tlog/
+
+# Compiled files
 *.slo
 *.lo
 *.o
 *.obj
-
-# Precompiled Headers
 *.gch
 *.pch
-
-# Compiled Dynamic libraries
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
 *.mod
-
-# Compiled Static libraries
 *.lai
 *.la
 *.a
 *.lib
-
-# Executables
 *.exe
 *.out
 *.app
+*.res
+*.iobj
+*.ipdb
+*.idb
+*.pdb
+*.ilk
+*.recipe
+*.log
 
-# Visual Studio things
+# Visual Studio
+/.vs/
+/.bkp/
+/ipch/
+/.wiki/
 *.sdf
 *.opensdf
 *.aps
-*.pdb
-*.log
-/.vs
-/.bkp
-/ipch
-/Debug
-/.wiki
-*/Debug
-/Release
-/SC4Ed/Debug/SC4Ed.tlog
-
 *.VC.opendb
 *.VC.db
+*.vcxproj.user
+
+# Local ROMs and emulator state
+*.sfc
+*.smc
+*.fig
+*.swc
+*.srm
+*.state

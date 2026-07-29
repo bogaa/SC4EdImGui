@@ -1,11 +1,37 @@
-# SC4Ed
-Super Castlevania Editor Orginaly Developed by [RedGuyyyy](https://github.com/RedGuyyyy?tab=repositories) more info to the project here [RHDN_Forum Project Page](https://www.romhacking.net/forum/index.php?topic=21867.msg336111#msg336111)
+# SC4Ed ImGui
 
+SC4Ed ImGui is a modern Dear ImGui/Direct3D 11 editor for Super Castlevania IV ROM hacking. It keeps the proven ROM parsing and editing code from the original Win32/MFC SC4Ed, but moves the active editor UI into a faster docked ImGui application.
 
-The wiki here has a [manual](https://github.com/bogaa/SC4Ed/wiki/SC4Ed-stable-overview) to get you started with the editor!
+The original SC4Ed was developed by [RedGuyyyy](https://github.com/RedGuyyyy?tab=repositories), with more project history on the [RHDN forum thread](https://www.romhacking.net/forum/index.php?topic=21867.msg336111#msg336111). SC4Ed was built on ideas from [MegaEDX](https://github.com/Xeeynamo/MegaEdX/tree/master).
 
+## Layout
 
-The [MegaEDX](https://github.com/Xeeynamo/MegaEdX/tree/master) project was used to build Super Castlevania IV Editor on top off. The Megaman support was dropped but basic support for Gradius 3 and Contra 3 is added.
+- `src/app/` - the ImGui editor application.
+- `src/core/` - the retained SC4Ed ROM/core code used by the app.
+- `third_party/imgui/` - the minimal Dear ImGui files and Win32/DX11 backend files used by the editor.
+- `docs/` - migration notes and split-up plans.
+- `assets/samples/` - sample PNG/Aseprite files used while testing import and palette workflows.
+- `runtime/` - local runtime DLLs such as `retro.dll`. DLLs are ignored and should not be committed.
 
+ROM files are intentionally ignored and should not be committed.
 
-I try my best to improve the editor further. 
+## Build
+
+Requirements:
+
+- Visual Studio 2022 with the C++ desktop workload
+- CMake 3.24 or newer
+- Dear ImGui sources in `third_party/imgui`
+
+Configure and build the ImGui editor:
+
+```powershell
+cmake --preset vs2022-win32
+cmake --build --preset imgui-debug-win32
+```
+
+The executable is written under `build/Debug/SC4EdImGui.exe`.
+
+## Notes
+
+The ImGui rewrite is the active editor. The old Win32/MFC application, randomizer, and standalone expander projects have been removed from this tree; the needed ROM knowledge remains in the retained core files.
