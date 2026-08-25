@@ -17,7 +17,7 @@ struct EditorState {
     bool showEvents = true;
     bool showGrid = false;
     bool showHelp = false;
-    bool showInternalEmulator = false;
+    bool showInternalEmulator = true;
     bool internalEmulatorRunning = false;
     bool followInternalEmulatorCamera = true;
     bool hasInternalEmulatorCamera = false;
@@ -33,11 +33,19 @@ struct EditorState {
     std::vector<uint16_t> blockBrush;
     int selectedBlockCell = 0;
     unsigned tilePaletteId = 0;
+    bool tileLayerPriority = false;
     unsigned drawTilesClipboardPalette = 0;
     bool tileFlipX = false;
     bool tileFlipY = false;
     int selectedEventIndex = -1;
     std::vector<RomUndoSnapshot> undoStack;
+    std::vector<RomUndoSnapshot> redoStack;
     bool levelPaintUndoActive = false;
     bool spritePaintUndoActive = false;
+    int activeToolTab = 0;
+    int activeEventPaletteTab = 0;
+    int activeSpriteTab = 0;
+    bool restoreToolTab = true;
+    bool restoreEventPaletteTab = true;
+    bool restoreSpriteTab = true;
 };

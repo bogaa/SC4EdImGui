@@ -3,10 +3,12 @@
 #include "EditorState.h"
 #include "EditorUndo.h"
 #include "EventNames.h"
+#include "ImageClipboard.h"
 #include "imgui.h"
 #include "SC4Core.h"
 
 #include <algorithm>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <set>
@@ -18,6 +20,7 @@ namespace {
 enum class SpriteTileSource {
     Vram,
     SimonWram,
+    FontCache,
 };
 
 struct SpritePiece {
@@ -38,6 +41,7 @@ struct SpriteEntry {
     WORD slotOffset = 0;
     RECT bounds = {};
     std::vector<SpritePiece> pieces;
+    bool denseTileGrid = false;
 };
 
 static uint32_t g_selectedSpriteKey = 0xFFFFFFFFu;
@@ -47,6 +51,7 @@ static int g_paintValue = 1;
 static int g_canvasZoom = 8;
 static int g_spritePaletteId = 0;
 static uint32_t g_spritePaletteFrameKey = 0xFFFFFFFFu;
+static std::string g_spriteClipboardStatus;
 
 static bool CanReadRom(const SC4Core& core, unsigned pcOffset, unsigned bytes)
 {
@@ -354,6 +359,12 @@ static BYTE GetSpritePixel(const SC4Core& core, SpriteTileSource source, unsigne
         BYTE raw[0x40] = {};
         return GetSimonTileRaw(core, tile, raw) ? (raw[x + y * 8] & 0xF) : 0;
     }
+    if (source == SpriteTileSource::FontCache) {
+        if (tile >= 0x100) {
+            return 0;
+        }
+        return core.fontCache[0x400 + (tile << 6) + x + y * 8] & 0x3;
+    }
     return GetSpritePixel(core, tile, x, y);
 }
 
@@ -362,6 +373,16 @@ static bool HasSpriteTilePixels(const SC4Core& core, SpriteTileSource source, un
     if (source == SpriteTileSource::SimonWram) {
         BYTE raw[0x40] = {};
         return GetSimonTileRaw(core, tile, raw);
+    }
+    if (source == SpriteTileSource::FontCache) {
+        for (int y = 0; y < 8; ++y) {
+            for (int x = 0; x < 8; ++x) {
+                if (GetSpritePixel(core, source, tile, x, y)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
     if (tile >= 0x400) {
         return false;
@@ -382,6 +403,10 @@ static void SetSpritePixel(SC4Core& core, SpriteTileSource source, unsigned tile
         return;
     }
 
+    if (source == SpriteTileSource::FontCache) {
+        return;
+    }
+
     if (source == SpriteTileSource::SimonWram) {
         const unsigned ramOffset = 0x10000 + tile * 0x20;
         if (ramOffset + 0x20 > sizeof(core.ram)) {
@@ -391,6 +416,7 @@ static void SetSpritePixel(SC4Core& core, SpriteTileSource source, unsigned tile
         GetSimonTileRaw(core, tile, raw);
         raw[x + y * 8] = value & 0xF;
         core.raw2tile4bpp(raw, core.ram + ramOffset);
+        core.simonSpriteUpdate.insert(tile);
         return;
     }
 
@@ -643,7 +669,7 @@ static void AddSimonComponentSprites(std::vector<SpriteEntry>& sprites, const SC
         return a.minX < b.minX;
     });
 
-    auto addComponentRange = [&](unsigned first, unsigned count, unsigned cropBottomRows, const char* label) {
+    auto addComponentRange = [&](unsigned first, unsigned count, unsigned cropBottomRows, const char* label, bool includeBlankTiles) {
         if (!count || first >= components.size()) {
             return;
         }
@@ -669,21 +695,37 @@ static void AddSimonComponentSprites(std::vector<SpriteEntry>& sprites, const SC
         entry.sources.push_back(label);
         entry.bounds = { 0, 0, LONG((maxX - minX + 1) * 8), LONG((maxY - minY + 1) * 8) };
 
-        for (unsigned i = first; i < first + count; ++i) {
-            std::sort(components[i].tiles.begin(), components[i].tiles.end());
-            for (unsigned tile : components[i].tiles) {
-                const unsigned x = tile % sheetColumns;
-                const unsigned y = tile / sheetColumns;
-                if (y < minY || y > maxY) {
-                    continue;
+        if (includeBlankTiles) {
+            entry.denseTileGrid = true;
+            for (unsigned y = minY; y <= maxY; ++y) {
+                for (unsigned x = minX; x <= maxX; ++x) {
+                    const unsigned tile = y * sheetColumns + x;
+                    SpritePiece piece = {};
+                    piece.x = static_cast<int>((x - minX) * 8);
+                    piece.y = static_cast<int>((y - minY) * 8);
+                    piece.source = SpriteTileSource::SimonWram;
+                    piece.tile = tile;
+                    piece.palette = 0;
+                    entry.pieces.push_back(piece);
                 }
-                SpritePiece piece = {};
-                piece.x = static_cast<int>((x - minX) * 8);
-                piece.y = static_cast<int>((y - minY) * 8);
-                piece.source = SpriteTileSource::SimonWram;
-                piece.tile = tile;
-                piece.palette = 0;
-                entry.pieces.push_back(piece);
+            }
+        } else {
+            for (unsigned i = first; i < first + count; ++i) {
+                std::sort(components[i].tiles.begin(), components[i].tiles.end());
+                for (unsigned tile : components[i].tiles) {
+                    const unsigned x = tile % sheetColumns;
+                    const unsigned y = tile / sheetColumns;
+                    if (y < minY || y > maxY) {
+                        continue;
+                    }
+                    SpritePiece piece = {};
+                    piece.x = static_cast<int>((x - minX) * 8);
+                    piece.y = static_cast<int>((y - minY) * 8);
+                    piece.source = SpriteTileSource::SimonWram;
+                    piece.tile = tile;
+                    piece.palette = 0;
+                    entry.pieces.push_back(piece);
+                }
             }
         }
 
@@ -693,11 +735,11 @@ static void AddSimonComponentSprites(std::vector<SpriteEntry>& sprites, const SC
     };
 
     const unsigned simonComponentCount = (std::min)(16u, static_cast<unsigned>(components.size()));
-    addComponentRange(0, simonComponentCount, 14, "Simon");
+    addComponentRange(0, simonComponentCount, 14, "Simon", true);
     for (unsigned i = simonComponentCount; i < components.size(); ++i) {
         char label[48] = {};
         std::snprintf(label, sizeof(label), "Simon component %u", i);
-        addComponentRange(i, 1, 0, label);
+        addComponentRange(i, 1, 0, label, false);
     }
 }
 
@@ -930,6 +972,29 @@ static ImU32 ToPaletteRowColor(SC4Core& core, int paletteRow, int index)
     return IM_COL32(r, g, b, 0xFF);
 }
 
+static ImU32 ToFontColor(const SC4Core& core, int palette, int index)
+{
+    const uint16_t color = core.fontPalCache[((palette & 0x1) << 4) | (index & 0x3)];
+    const ImU8 r = static_cast<ImU8>(((color >> 10) & 0x1F) * 255 / 31);
+    const ImU8 g = static_cast<ImU8>(((color >> 5) & 0x1F) * 255 / 31);
+    const ImU8 b = static_cast<ImU8>((color & 0x1F) * 255 / 31);
+    return IM_COL32(r, g, b, 0xFF);
+}
+
+static bool UsesFontTiles(const SpriteEntry& sprite)
+{
+    return !sprite.pieces.empty() && std::all_of(sprite.pieces.begin(), sprite.pieces.end(), [](const SpritePiece& piece) {
+        return piece.source == SpriteTileSource::FontCache;
+    });
+}
+
+static ImU32 ToPieceColor(SC4Core& core, const SpritePiece& piece, int index)
+{
+    return piece.source == SpriteTileSource::FontCache
+        ? ToFontColor(core, static_cast<int>(piece.palette), index)
+        : ToImColor(core, static_cast<int>(piece.palette), index);
+}
+
 static void DrawChecker(ImDrawList* drawList, ImVec2 min, ImVec2 max, float scale)
 {
     const float checker = (std::max)(2.0f, scale);
@@ -982,6 +1047,19 @@ static BYTE SampleAtMouse(const SC4Core& core, const SpriteEntry& sprite, ImVec2
     const int spriteX = static_cast<int>(sprite.bounds.left) + localX;
     const int spriteY = static_cast<int>(sprite.bounds.top) + localY;
 
+    if (sprite.denseTileGrid && localX >= 0 && localY >= 0) {
+        const int width = static_cast<int>(sprite.bounds.right - sprite.bounds.left);
+        const int height = static_cast<int>(sprite.bounds.bottom - sprite.bounds.top);
+        if (localX < width && localY < height) {
+            const size_t columns = static_cast<size_t>((width + 7) / 8);
+            const size_t index = static_cast<size_t>(localY / 8) * columns + static_cast<size_t>(localX / 8);
+            if (index < sprite.pieces.size()) {
+                const SpritePiece& piece = sprite.pieces[index];
+                return GetSpritePixel(core, piece.source, piece.tile, localX & 7, localY & 7);
+            }
+        }
+    }
+
     for (const SpritePiece& piece : sprite.pieces) {
         if (spriteX < piece.x || spriteX >= piece.x + 8 || spriteY < piece.y || spriteY >= piece.y + 8) {
             continue;
@@ -995,6 +1073,129 @@ static BYTE SampleAtMouse(const SC4Core& core, const SpriteEntry& sprite, ImVec2
     }
 
     return 0;
+}
+
+static bool PaintSpritePixel(SC4Core& core, const SpriteEntry& sprite, int localX, int localY, BYTE value)
+{
+    const int spriteX = static_cast<int>(sprite.bounds.left) + localX;
+    const int spriteY = static_cast<int>(sprite.bounds.top) + localY;
+    if (sprite.denseTileGrid && localX >= 0 && localY >= 0) {
+        const int width = static_cast<int>(sprite.bounds.right - sprite.bounds.left);
+        const int height = static_cast<int>(sprite.bounds.bottom - sprite.bounds.top);
+        if (localX < width && localY < height) {
+            const size_t columns = static_cast<size_t>((width + 7) / 8);
+            const size_t index = static_cast<size_t>(localY / 8) * columns + static_cast<size_t>(localX / 8);
+            if (index < sprite.pieces.size()) {
+                const SpritePiece& piece = sprite.pieces[index];
+                SetSpritePixel(core, piece.source, piece.tile, localX & 7, localY & 7, value);
+                return true;
+            }
+        }
+    }
+    for (const SpritePiece& piece : sprite.pieces) {
+        if (spriteX < piece.x || spriteX >= piece.x + 8 || spriteY < piece.y || spriteY >= piece.y + 8) {
+            continue;
+        }
+        int tileX = spriteX - piece.x;
+        int tileY = spriteY - piece.y;
+        if (piece.hflip) tileX = 7 - tileX;
+        if (piece.vflip) tileY = 7 - tileY;
+        SetSpritePixel(core, piece.source, piece.tile, tileX, tileY, value);
+        return true;
+    }
+    return false;
+}
+
+static uint32_t SpritePaletteColor(const SC4Core& core, bool fontTiles, int palette, int index)
+{
+    if (index == 0) return 0;
+    const uint16_t color = fontTiles
+        ? core.fontPalCache[((palette & 0x1) << 4) | (index & 0x3)]
+        : core.palCache[((palette & 0xF) << 4) | (index & 0xF)];
+    const uint32_t r = ((color >> 10) & 0x1F) * 255 / 31;
+    const uint32_t g = ((color >> 5) & 0x1F) * 255 / 31;
+    const uint32_t b = (color & 0x1F) * 255 / 31;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+static bool CopySpriteToClipboard(HWND hwnd, const SC4Core& core, const SpriteEntry& sprite, int palette)
+{
+    ClipboardImage image;
+    image.width = (std::max)(1, static_cast<int>(sprite.bounds.right - sprite.bounds.left));
+    image.height = (std::max)(1, static_cast<int>(sprite.bounds.bottom - sprite.bounds.top));
+    image.pixels.assign(static_cast<size_t>(image.width) * image.height, 0);
+    const bool fontTiles = UsesFontTiles(sprite);
+
+    for (const SpritePiece& piece : sprite.pieces) {
+        for (int y = 0; y < 8; ++y) {
+            for (int x = 0; x < 8; ++x) {
+                const int rawX = piece.hflip ? 7 - x : x;
+                const int rawY = piece.vflip ? 7 - y : y;
+                const int value = GetSpritePixel(core, piece.source, piece.tile, rawX, rawY);
+                if (!value) continue;
+                const int dstX = piece.x - sprite.bounds.left + x;
+                const int dstY = piece.y - sprite.bounds.top + y;
+                if (dstX >= 0 && dstY >= 0 && dstX < image.width && dstY < image.height) {
+                    image.pixels[static_cast<size_t>(dstY) * image.width + dstX] =
+                        SpritePaletteColor(core, fontTiles, palette, value);
+                }
+            }
+        }
+    }
+    return CopyImageToClipboard(hwnd, image);
+}
+
+static int NearestSpritePaletteColor(const SC4Core& core, int palette, uint32_t pixel)
+{
+    const int r = (pixel >> 16) & 0xFF;
+    const int g = (pixel >> 8) & 0xFF;
+    const int b = pixel & 0xFF;
+    int bestIndex = 1;
+    int bestDistance = INT_MAX;
+    for (int index = 1; index < 16; ++index) {
+        const uint32_t candidate = SpritePaletteColor(core, false, palette, index);
+        const int dr = r - static_cast<int>((candidate >> 16) & 0xFF);
+        const int dg = g - static_cast<int>((candidate >> 8) & 0xFF);
+        const int db = b - static_cast<int>(candidate & 0xFF);
+        const int distance = dr * dr + dg * dg + db * db;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+        }
+    }
+    return bestIndex;
+}
+
+static bool PasteSpriteFromClipboard(HWND hwnd, EditorState& state, const SpriteEntry& sprite, int palette)
+{
+    ClipboardImage image;
+    if (!ReadImageFromClipboard(hwnd, image)) {
+        g_spriteClipboardStatus = "Clipboard does not contain a supported image.";
+        return false;
+    }
+    const int width = static_cast<int>(sprite.bounds.right - sprite.bounds.left);
+    const int height = static_cast<int>(sprite.bounds.bottom - sprite.bounds.top);
+    if (image.width != width || image.height != height) {
+        char message[128] = {};
+        std::snprintf(message, sizeof(message), "Paste image must be %dx%d pixels; clipboard is %dx%d.", width, height, image.width, image.height);
+        g_spriteClipboardStatus = message;
+        return false;
+    }
+
+    PushUndo(state);
+    SC4Core& core = state.session.Core();
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const uint32_t pixel = image.pixels[static_cast<size_t>(y) * width + x];
+            const BYTE value = ((pixel >> 24) & 0xFF) < 128
+                ? 0
+                : static_cast<BYTE>(NearestSpritePaletteColor(core, palette, pixel));
+            PaintSpritePixel(core, sprite, x, y, value);
+        }
+    }
+    state.levelRenderer.Invalidate();
+    g_spriteClipboardStatus = "Pasted sprite image using the selected palette.";
+    return true;
 }
 
 static void DrawSpriteThumbnail(SC4Core& core, ImDrawList* drawList, const SpriteEntry& sprite, ImVec2 min, ImVec2 max)
@@ -1022,7 +1223,7 @@ static void DrawSpriteThumbnail(SC4Core& core, ImDrawList* drawList, const Sprit
                 drawList->AddRectFilled(
                     ImVec2(min.x + drawX * drawScale, min.y + drawY * drawScale),
                     ImVec2(min.x + (drawX + 1) * drawScale, min.y + (drawY + 1) * drawScale),
-                    ToImColor(core, static_cast<int>(piece.palette), pixel));
+                    ToPieceColor(core, piece, pixel));
             }
         }
     }
@@ -1030,9 +1231,10 @@ static void DrawSpriteThumbnail(SC4Core& core, ImDrawList* drawList, const Sprit
     drawList->AddRect(min, max, IM_COL32(92, 92, 102, 255));
 }
 
-static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
+static void DrawSpriteCanvas(EditorState& state, HWND hwnd, const SpriteEntry& sprite)
 {
     SC4Core& core = state.session.Core();
+    const bool fontTiles = UsesFontTiles(sprite);
     const int spriteWidth = (std::max)(1, static_cast<int>(sprite.bounds.right - sprite.bounds.left));
     const int spriteHeight = (std::max)(1, static_cast<int>(sprite.bounds.bottom - sprite.bounds.top));
     ImGui::TextUnformatted("Zoom");
@@ -1045,16 +1247,35 @@ static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
     ImGui::SameLine();
     if (g_spritePaletteFrameKey != sprite.key) {
         g_spritePaletteFrameKey = sprite.key;
-        g_spritePaletteId = sprite.pieces.empty() ? 8 : static_cast<int>(0x8 | (sprite.pieces.front().palette & 0x7));
+        g_spritePaletteId = sprite.pieces.empty() ? 8 : (fontTiles
+            ? static_cast<int>(sprite.pieces.front().palette & 0x1)
+            : static_cast<int>(0x8 | (sprite.pieces.front().palette & 0x7)));
     }
     ImGui::SetNextItemWidth(64.0f);
     if (ImGui::InputInt("##sprite-palette-id", &g_spritePaletteId, 1, 1)) {
-        g_spritePaletteId = std::clamp(g_spritePaletteId, 0, 15);
-        PushUndo(state);
-        SetSpriteFramePalette(state, sprite, static_cast<unsigned>(g_spritePaletteId));
-        state.levelRenderer.Invalidate();
+        g_spritePaletteId = std::clamp(g_spritePaletteId, 0, fontTiles ? 1 : 15);
+        if (!fontTiles) {
+            PushUndo(state);
+            SetSpriteFramePalette(state, sprite, static_cast<unsigned>(g_spritePaletteId));
+            state.levelRenderer.Invalidate();
+        }
     }
-    g_spritePaletteId = std::clamp(g_spritePaletteId, 0, 15);
+    g_spritePaletteId = std::clamp(g_spritePaletteId, 0, fontTiles ? 1 : 15);
+    ImGui::SameLine();
+    if (ImGui::Button("Copy")) {
+        g_spriteClipboardStatus = CopySpriteToClipboard(hwnd, core, sprite, g_spritePaletteId)
+            ? "Copied assembled sprite frame to the clipboard."
+            : "Could not copy the sprite image.";
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(fontTiles);
+    if (ImGui::Button("Paste")) {
+        PasteSpriteFromClipboard(hwnd, state, sprite, g_spritePaletteId);
+    }
+    ImGui::EndDisabled();
+    if (!g_spriteClipboardStatus.empty()) {
+        ImGui::TextWrapped("%s", g_spriteClipboardStatus.c_str());
+    }
     ImGui::Text("Assembly %04X  Slot %04X", sprite.assemblyOffset, sprite.slotOffset);
     if (sprite.sources.size() > 1) {
         std::string combined;
@@ -1069,25 +1290,28 @@ static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
     ImGui::Separator();
 
     const int palette = g_spritePaletteId;
-    ImGui::TextUnformatted("Paint");
-    for (int i = 0; i < 16; ++i) {
+    ImGui::TextUnformatted(fontTiles ? "Colors" : "Paint");
+    const int colorCount = fontTiles ? 4 : 16;
+    for (int i = 0; i < colorCount; ++i) {
         if (i > 0 && (i % 8) != 0) {
             ImGui::SameLine();
         }
-        const uint16_t color = core.palCache[i | ((palette & 0xF) << 4)];
+        const uint16_t color = fontTiles
+            ? core.fontPalCache[((palette & 0x1) << 4) | i]
+            : core.palCache[i | ((palette & 0xF) << 4)];
         const ImVec4 buttonColor(
             float(((color >> 10) & 0x1F) * 255 / 31) / 255.0f,
             float(((color >> 5) & 0x1F) * 255 / 31) / 255.0f,
             float((color & 0x1F) * 255 / 31) / 255.0f,
             i == 0 ? 0.85f : 1.0f);
         ImGui::PushID(i);
-        if (ImGui::ColorButton("##swatch", buttonColor, ImGuiColorEditFlags_NoTooltip, ImVec2(20, 20))) {
+        if (ImGui::ColorButton("##swatch", buttonColor, ImGuiColorEditFlags_NoTooltip, ImVec2(20, 20)) && !fontTiles) {
             g_paintValue = i;
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Value %d", i);
         }
-        if (g_paintValue == i) {
+        if (!fontTiles && g_paintValue == i) {
             ImGui::GetWindowDrawList()->AddRect(
                 ImGui::GetItemRectMin(),
                 ImGui::GetItemRectMax(),
@@ -1098,7 +1322,11 @@ static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
         }
         ImGui::PopID();
     }
-    ImGui::Text("Value %d", g_paintValue & 0xF);
+    if (fontTiles) {
+        ImGui::TextDisabled("2bpp HUD/font graphics (view only)");
+    } else {
+        ImGui::Text("Value %d", g_paintValue & 0xF);
+    }
     ImGui::Separator();
 
     const ImVec2 canvasSize(spriteWidth * g_canvasZoom, spriteHeight * g_canvasZoom);
@@ -1123,7 +1351,7 @@ static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
                 drawList->AddRectFilled(
                     ImVec2(canvasMin.x + drawX * g_canvasZoom, canvasMin.y + drawY * g_canvasZoom),
                     ImVec2(canvasMin.x + (drawX + 1) * g_canvasZoom, canvasMin.y + (drawY + 1) * g_canvasZoom),
-                    ToPaletteRowColor(core, g_spritePaletteId, pixel));
+                    fontTiles ? ToFontColor(core, g_spritePaletteId, pixel) : ToPaletteRowColor(core, g_spritePaletteId, pixel));
             }
         }
     }
@@ -1141,7 +1369,7 @@ static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
 
     drawList->AddRect(canvasMin, canvasMax, IM_COL32(90, 90, 102, 255));
 
-    if (ImGui::IsItemHovered()) {
+    if (ImGui::IsItemHovered() && !fontTiles) {
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             g_paintValue = SampleAtMouse(core, sprite, canvasMin, g_canvasZoom, mouse) & 0xF;
@@ -1162,10 +1390,12 @@ static void DrawSpriteCanvas(EditorState& state, const SpriteEntry& sprite)
         state.spritePaintUndoActive = false;
     }
 
-    ImGui::TextDisabled("Left-drag paints. Right-click samples a value.");
+    if (!fontTiles) {
+        ImGui::TextDisabled("Left-drag paints. Right-click samples a value.");
+    }
 }
 
-static void DrawSpriteBrowser(EditorState& state, std::vector<SpriteEntry>& sprites, const char* title, const char* emptyMessage)
+static void DrawSpriteBrowser(EditorState& state, HWND hwnd, std::vector<SpriteEntry>& sprites, const char* title, const char* emptyMessage)
 {
     SC4Core& core = state.session.Core();
     if (sprites.empty()) {
@@ -1259,13 +1489,13 @@ static void DrawSpriteBrowser(EditorState& state, std::vector<SpriteEntry>& spri
     }
     ImGui::EndChild();
 
-    DrawSpriteCanvas(state, frames[g_selectedFrameIndex]);
+    DrawSpriteCanvas(state, hwnd, frames[g_selectedFrameIndex]);
     ImGui::EndChild();
 }
 
 } // namespace
 
-void DrawSpriteEditor(EditorState& state)
+void DrawSpriteEditor(EditorState& state, HWND hwnd)
 {
     if (!state.session.IsLoaded()) {
         ImGui::TextUnformatted("Open a ROM to browse and paint sprites.");
@@ -1274,14 +1504,27 @@ void DrawSpriteEditor(EditorState& state)
 
     SC4Core& core = state.session.Core();
     if (ImGui::BeginTabBar("sprite-editor-subtabs")) {
-        if (ImGui::BeginTabItem("Global")) {
+        const int restoredSpriteTab = state.activeSpriteTab;
+        const ImGuiTabItemFlags globalFlags = state.restoreSpriteTab && restoredSpriteTab == 0
+            ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        const ImGuiTabItemFlags levelFlags = state.restoreSpriteTab && restoredSpriteTab == 1
+            ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        if (ImGui::BeginTabItem("Global", nullptr, globalFlags)) {
+            if (!state.restoreSpriteTab || restoredSpriteTab == 0) {
+                state.activeSpriteTab = 0;
+                state.restoreSpriteTab = false;
+            }
             std::vector<SpriteEntry> sprites = BuildGlobalSprites(core);
-            DrawSpriteBrowser(state, sprites, "Global sprites", "No global sprites found.");
+            DrawSpriteBrowser(state, hwnd, sprites, "Global sprites", "No global sprites found.");
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Level")) {
+        if (ImGui::BeginTabItem("Level", nullptr, levelFlags)) {
+            if (!state.restoreSpriteTab || restoredSpriteTab == 1) {
+                state.activeSpriteTab = 1;
+                state.restoreSpriteTab = false;
+            }
             std::vector<SpriteEntry> sprites = BuildLevelSprites(core);
-            DrawSpriteBrowser(state, sprites, "Level sprites", "No sprites found for this level.");
+            DrawSpriteBrowser(state, hwnd, sprites, "Level sprites", "No sprites found for this level.");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

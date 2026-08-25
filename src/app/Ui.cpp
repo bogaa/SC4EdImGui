@@ -1,9 +1,12 @@
 #include "Ui.h"
 
+#include "BpsPatch.h"
 #include "EventDragDrop.h"
 #include "EventNames.h"
 #include "EditorUndo.h"
 #include "HudEditor.h"
+#include "InstrumentEditor.h"
+#include "MusicEditor.h"
 #include "PropertyPanel.h"
 #include "SpriteEditor.h"
 #include "Emulator.h"
@@ -150,6 +153,76 @@ static std::string SaveRomDialog(HWND owner, const std::string& currentPath)
     return fileName;
 }
 
+static std::string OpenOriginalRomDialog(HWND owner)
+{
+    char fileName[MAX_PATH] = {};
+    OPENFILENAMEA ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = "SNES ROM (*.sfc;*.smc)\0*.sfc;*.smc\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    ofn.lpstrTitle = "Select Original Unmodified ROM";
+    if (!GetOpenFileNameA(&ofn)) {
+        return {};
+    }
+    return fileName;
+}
+
+static std::string SaveBpsDialog(HWND owner, const std::string& currentRomPath)
+{
+    char fileName[MAX_PATH] = {};
+    if (!currentRomPath.empty()) {
+        strncpy_s(fileName, currentRomPath.c_str(), _TRUNCATE);
+        char* extension = strrchr(fileName, '.');
+        if (extension) {
+            strcpy_s(extension, MAX_PATH - static_cast<size_t>(extension - fileName), ".bps");
+        } else {
+            strcat_s(fileName, ".bps");
+        }
+    }
+
+    OPENFILENAMEA ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = "BPS patch (*.bps)\0*.bps\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    ofn.lpstrTitle = "Export BPS Patch";
+    ofn.lpstrDefExt = "bps";
+    if (!GetSaveFileNameA(&ofn)) {
+        return {};
+    }
+    return fileName;
+}
+
+bool ConfirmUnsavedChanges(EditorState& state, HWND hwnd, const char* action)
+{
+    if (!state.session.IsDirty()) {
+        return true;
+    }
+
+    const std::string message = "The ROM has unsaved changes.\n\nSave before "
+        + std::string(action ? action : "continuing") + "?";
+    const int choice = MessageBoxA(hwnd, message.c_str(), "SC4Ed ImGui", MB_YESNOCANCEL | MB_ICONWARNING);
+    if (choice == IDCANCEL || choice == 0) {
+        return false;
+    }
+    if (choice == IDNO) {
+        return true;
+    }
+    if (state.session.Save()) {
+        AddLog(SaveLogMessage(state.session.Info().path));
+        return true;
+    }
+
+    const std::string error = "Could not save the ROM:\n\n" + state.session.LastError();
+    MessageBoxA(hwnd, error.c_str(), "Save failed", MB_OK | MB_ICONERROR);
+    return false;
+}
+
 static unsigned ScancodeForVirtualKey(unsigned vk)
 {
     return MapVirtualKeyA(vk, MAPVK_VK_TO_VSC) << 16;
@@ -252,15 +325,28 @@ static bool StartInternalEmulator(EditorState& state, HWND hwnd)
     nmmx.point = static_cast<WORD>(state.checkpoint);
     strncpy_s(nmmx.filePath, state.session.Info().path.c_str(), _TRUNCATE);
 
-    if (!Emulator::Instance()->Terminate()) {
-        AddLog("Internal emulator did not stop cleanly. Close and reopen the editor if it remains stuck.");
-        return false;
-    }
-    if (!Emulator::Instance()->Init()) {
+    if (!Emulator::Instance()->IsInitialized() && !Emulator::Instance()->Init()) {
         AddLog("Internal emulator init failed: " + Emulator::Instance()->retroLoadError);
         return false;
     }
-    if (!Emulator::Instance()->LoadRom(core.rom, core.romSize)) {
+
+    const std::vector<BYTE> romBackup(core.rom, core.rom + core.romSize);
+    const std::set<unsigned> spriteUpdateBackup = core.spriteUpdate;
+    const std::set<unsigned> simonSpriteUpdateBackup = core.simonSpriteUpdate;
+    core.SaveEvents();
+    core.SaveLevel();
+    const bool stagedAllSprites = core.spriteUpdate.empty() && core.simonSpriteUpdate.empty();
+    const bool loadedRom = stagedAllSprites && Emulator::Instance()->LoadRom(core.rom, core.romSize);
+    std::memcpy(core.rom, romBackup.data(), romBackup.size());
+    core.spriteUpdate = spriteUpdateBackup;
+    core.simonSpriteUpdate = simonSpriteUpdateBackup;
+
+    if (!stagedAllSprites) {
+        Emulator::Instance()->Terminate();
+        AddLog("Internal emulator reload failed: pending sprite graphics require an expanded ROM.");
+        return false;
+    }
+    if (!loadedRom) {
         AddLog("Internal emulator ROM load failed: " + Emulator::Instance()->retroLoadError);
         return false;
     }
@@ -277,10 +363,7 @@ static bool StartInternalEmulator(EditorState& state, HWND hwnd)
 
 static void StopInternalEmulator(EditorState& state)
 {
-    if (!Emulator::Instance()->Terminate()) {
-        AddLog("Internal emulator did not stop cleanly.");
-        return;
-    }
+    Emulator::Instance()->Stop();
     state.internalEmulatorRunning = false;
     state.hasInternalEmulatorCamera = false;
     AddLog("Internal emulator stopped.");
@@ -319,11 +402,13 @@ static void DrawTopBar(EditorState& state, HWND hwnd)
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Open ROM...")) {
                 const std::string path = OpenRomDialog(hwnd);
-                if (!path.empty()) {
+                if (!path.empty() && ConfirmUnsavedChanges(state, hwnd, "opening another ROM")) {
                     if (state.session.OpenRom(path)) {
                         state.level = 0;
                         state.checkpoint = 0;
                         state.selectedEventIndex = -1;
+                        state.undoStack.clear();
+                        state.redoStack.clear();
                         state.levelRenderer.Invalidate();
                         AddLog("Loaded ROM: " + path);
                     } else {
@@ -341,6 +426,22 @@ static void DrawTopBar(EditorState& state, HWND hwnd)
                     AddLog(state.session.SaveAs(path) ? SaveLogMessage(state.session.Info().path) : "Save As failed: " + state.session.LastError());
                 }
             }
+            if (ImGui::MenuItem("Export BPS Patch...")) {
+                const std::string originalPath = OpenOriginalRomDialog(hwnd);
+                if (!originalPath.empty()) {
+                    const std::string patchPath = SaveBpsDialog(hwnd, state.session.Info().path);
+                    if (!patchPath.empty()) {
+                        std::string error;
+                        const std::vector<uint8_t> target = state.session.CurrentRomBytes();
+                        if (ExportBpsPatch(originalPath, target, patchPath, error)) {
+                            AddLog("BPS patch exported: " + patchPath + " at " + CurrentTimeString());
+                        } else {
+                            AddLog("BPS export failed: " + error);
+                            MessageBoxA(hwnd, error.c_str(), "BPS export failed", MB_OK | MB_ICONERROR);
+                        }
+                    }
+                }
+            }
             ImGui::EndDisabled();
             ImGui::Separator();
             if (ImGui::MenuItem("ROM Expander...")) {
@@ -349,6 +450,8 @@ static void DrawTopBar(EditorState& state, HWND hwnd)
                     state.session.LoadCurrentLayer(state.showBackground);
                     state.levelRenderer.Invalidate();
                     state.selectedEventIndex = -1;
+                    state.undoStack.clear();
+                    state.redoStack.clear();
                     AddLog("ROM expanded.");
                 } else {
                     AddLog("Expand failed: " + state.session.LastError());
@@ -371,10 +474,25 @@ static void DrawTopBar(EditorState& state, HWND hwnd)
             }
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Edit")) {
+            ImGui::BeginDisabled(state.undoStack.empty());
+            if (ImGui::MenuItem("Undo", "Ctrl+Z")) {
+                PerformUndo(state);
+            }
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(state.redoStack.empty());
+            if (ImGui::MenuItem("Redo", "Ctrl+Y")) {
+                PerformRedo(state);
+            }
+            ImGui::EndDisabled();
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("View")) {
             if (ImGui::MenuItem("Show Background", nullptr, &state.showBackground)) {
                 if (state.session.LoadCurrentLayer(state.showBackground)) {
                     state.levelRenderer.Invalidate();
+                    state.undoStack.clear();
+                    state.redoStack.clear();
                 }
             }
             ImGui::MenuItem("Show Collision", nullptr, &state.showCollision);
@@ -408,7 +526,6 @@ static void BuildDefaultDockLayout(ImGuiID dockspaceId, ImVec2 dockspaceSize)
     const ImGuiID leftBottomId = ImGui::DockBuilderSplitNode(leftTopId, ImGuiDir_Down, 0.56f, nullptr, &leftTopId);
 
     ImGui::DockBuilderDockWindow("Level View", mainId);
-    ImGui::DockBuilderDockWindow("Internal Emulator", paletteId);
     ImGui::DockBuilderDockWindow("Palette", paletteId);
     ImGui::DockBuilderDockWindow("ROM", leftTopId);
     ImGui::DockBuilderDockWindow("Level Properties", leftTopId);
@@ -419,6 +536,7 @@ static void BuildDefaultDockLayout(ImGuiID dockspaceId, ImVec2 dockspaceSize)
     ImGui::DockBuilderDockWindow("Log", logId);
     ImGui::DockBuilderDockWindow("Global Properties", rightId);
     ImGui::DockBuilderDockWindow("Selection", rightId);
+    ImGui::DockBuilderDockWindow("Internal Emulator", rightId);
     ImGui::DockBuilderDockWindow("Help###HelpView", rightId);
     ImGui::DockBuilderFinish(dockspaceId);
 }
@@ -645,6 +763,8 @@ static void DrawSidebar(EditorState& state)
             state.session.LoadCurrentLayer(state.showBackground);
             state.levelRenderer.Invalidate();
             state.selectedEventIndex = -1;
+            state.undoStack.clear();
+            state.redoStack.clear();
         }
     }
     if (ImGui::SliderInt("Checkpoint", &state.checkpoint, 0, 15)) {
@@ -652,6 +772,8 @@ static void DrawSidebar(EditorState& state)
             state.session.LoadCurrentLayer(state.showBackground);
             state.levelRenderer.Invalidate();
             state.selectedEventIndex = -1;
+            state.undoStack.clear();
+            state.redoStack.clear();
         }
     }
     ImGui::SliderFloat("Zoom", &state.zoom, 1.0f, 4.0f, "%.1fx");
@@ -663,6 +785,8 @@ static void DrawSidebar(EditorState& state)
     if (ImGui::Checkbox("Show Background", &state.showBackground)) {
         if (state.session.LoadCurrentLayer(state.showBackground)) {
             state.levelRenderer.Invalidate();
+            state.undoStack.clear();
+            state.redoStack.clear();
         }
     }
     ImGui::Checkbox("Show Collision", &state.showCollision);
@@ -700,6 +824,10 @@ static void DrawInternalEmulator(EditorState& state, ID3D11Device* device)
     if (running) {
         if (ImGui::Button(Emulator::Instance()->GetState() == Emulator::EmuState::PAUSE ? "Resume" : "Pause")) {
             Emulator::Instance()->Pause();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reload Edits")) {
+            StartInternalEmulator(state, hWID[0]);
         }
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
@@ -2031,7 +2159,7 @@ static bool ImportScratchImageAsBackground(EditorState& state)
     const bool imported = ImportScratchImageAsLevel(
         state, "background", ScratchSelectedImportPalettes(), &foregroundUsedTiles, true);
 
-    if (!previousBackground) {
+    if (!imported && !previousBackground) {
         state.session.LoadCurrentLayer(false);
         state.showBackground = false;
     }
@@ -2283,16 +2411,33 @@ static int EventPaletteCategory(const EventPaletteTemplate& item)
 
 static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const std::vector<std::wstring>& droppedFiles)
 {
+    std::string musicLog;
+    std::string instrumentLog;
     ImGui::Begin("Tools");
     if (ImGui::BeginTabBar("tool-tabs")) {
-        if (ImGui::BeginTabItem("Edit Events")) {
+        const int restoredToolTab = state.activeToolTab;
+        const auto toolFlags = [&](int index) {
+            return state.restoreToolTab && restoredToolTab == index ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        };
+        if (ImGui::BeginTabItem("Edit Events", nullptr, toolFlags(0))) {
+            if (!state.restoreToolTab || restoredToolTab == 0) {
+                state.activeToolTab = 0;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = false;
             SC4Core& core = state.session.Core();
             if (ImGui::BeginTabBar("event-palette-tabs")) {
                 static const char* tabNames[] = { "Candles", "Enemies", "Misc" };
+                const int restoredEventTab = state.activeEventPaletteTab;
                 for (int tab = 0; tab < 3; ++tab) {
-                    if (!ImGui::BeginTabItem(tabNames[tab])) {
+                    const ImGuiTabItemFlags flags = state.restoreEventPaletteTab && restoredEventTab == tab
+                        ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+                    if (!ImGui::BeginTabItem(tabNames[tab], nullptr, flags)) {
                         continue;
+                    }
+                    if (!state.restoreEventPaletteTab || restoredEventTab == tab) {
+                        state.activeEventPaletteTab = tab;
+                        state.restoreEventPaletteTab = false;
                     }
 
                     ImGui::BeginChild(tabNames[tab], ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
@@ -2346,7 +2491,11 @@ static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const
             }
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Draw Tiles")) {
+        if (ImGui::BeginTabItem("Draw Tiles", nullptr, toolFlags(1))) {
+            if (!state.restoreToolTab || restoredToolTab == 1) {
+                state.activeToolTab = 1;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = true;
             int clipboardPalette = static_cast<int>(state.drawTilesClipboardPalette & 0x7);
             ImGui::SetNextItemWidth(80.0f);
@@ -2362,14 +2511,11 @@ static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const
             }
             ImGui::SameLine();
             if (ImGui::Button("Paste Tiles")) {
-                const size_t undoSize = state.undoStack.size();
-                PushUndo(state);
+                RomUndoSnapshot beforePaste = state.session.CreateUndoSnapshot(state.selectedEventIndex);
                 if (state.levelRenderer.PasteClipboardToAvailableTiles(hwnd, state.session, palette)) {
+                    CommitUndoSnapshot(state, std::move(beforePaste));
                     AddLog("Pasted clipboard image into available tiles.");
                 } else {
-                    if (state.undoStack.size() > undoSize) {
-                        state.undoStack.pop_back();
-                    }
                     AddLog("Paste tiles failed.");
                 }
             }
@@ -2381,35 +2527,75 @@ static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const
             }
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Edit Blocks")) {
+        if (ImGui::BeginTabItem("Edit Blocks", nullptr, toolFlags(2))) {
+            if (!state.restoreToolTab || restoredToolTab == 2) {
+                state.activeToolTab = 2;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = false;
             state.levelRenderer.DrawBlockEditor(state);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Tile Behavior")) {
+        if (ImGui::BeginTabItem("Tile Behavior", nullptr, toolFlags(3))) {
+            if (!state.restoreToolTab || restoredToolTab == 3) {
+                state.activeToolTab = 3;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = false;
             state.levelRenderer.DrawTileBehaviorEditor(state);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("HUD")) {
+        if (ImGui::BeginTabItem("HUD", nullptr, toolFlags(4))) {
+            if (!state.restoreToolTab || restoredToolTab == 4) {
+                state.activeToolTab = 4;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = false;
             DrawHudEditor(state);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Edit Sprites")) {
+        if (ImGui::BeginTabItem("Edit Sprites", nullptr, toolFlags(5))) {
+            if (!state.restoreToolTab || restoredToolTab == 5) {
+                state.activeToolTab = 5;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = false;
-            DrawSpriteEditor(state);
+            DrawSpriteEditor(state, hwnd);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Scratch Board")) {
+        if (ImGui::BeginTabItem("Scratch Board", nullptr, toolFlags(6))) {
+            if (!state.restoreToolTab || restoredToolTab == 6) {
+                state.activeToolTab = 6;
+                state.restoreToolTab = false;
+            }
             state.editLevelMode = false;
             DrawScratchBoard(state, device, droppedFiles);
             ImGui::EndTabItem();
         } else {
             ProcessScratchDrops(device, droppedFiles);
         }
+        if (ImGui::BeginTabItem("Edit Music", nullptr, toolFlags(7))) {
+            if (!state.restoreToolTab || restoredToolTab == 7) {
+                state.activeToolTab = 7;
+                state.restoreToolTab = false;
+            }
+            state.editLevelMode = false;
+            DrawMusicEditor(state, hwnd, musicLog);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Edit Instruments", nullptr, toolFlags(8))) {
+            if (!state.restoreToolTab || restoredToolTab == 8) {
+                state.activeToolTab = 8;
+                state.restoreToolTab = false;
+            }
+            state.editLevelMode = false;
+            DrawInstrumentEditor(state, hwnd, instrumentLog);
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
+    if (!musicLog.empty()) AddLog(musicLog);
+    if (!instrumentLog.empty()) AddLog(instrumentLog);
     ImGui::End();
 }
 
@@ -2462,6 +2648,7 @@ static void DrawHelpView(EditorState& state)
             ImGui::TableHeadersRow();
             HelpRow("Ctrl+S", "Save the current ROM.");
             HelpRow("Ctrl+Z", "Undo the last supported ROM edit.");
+            HelpRow("Ctrl+Y / Ctrl+Shift+Z", "Redo the last undone ROM edit.");
             HelpRow("Delete", "Delete the selected event in Level View.");
             HelpRow("Mouse wheel", "Scroll panels and lists. In Level View, use the Zoom slider for level scale.");
             HelpRow("Middle drag", "Pan the Level View.");
@@ -2526,6 +2713,7 @@ static void DrawHelpView(EditorState& state)
             ImGui::TableHeadersRow();
             HelpRow("Open ROM...", "Loads a SNES ROM file into the editor.");
             HelpRow("Save / Save As...", "Writes current ROM edits to disk. Save As chooses a new output path.");
+            HelpRow("Export BPS Patch...", "Creates a BPS patch from an original unmodified ROM and the current edited ROM in memory.");
             HelpRow("ROM Expander...", "Expands the loaded ROM so editors that need extra editable tables can write their data.");
             HelpRow("Show Background", "Switches the rendered level layer between foreground and background where supported.");
             HelpRow("Show Collision", "Draws collision information on top of the foreground view.");
@@ -2620,6 +2808,21 @@ static void DrawDockSpace(EditorState& state, HWND hwnd)
 void DrawEditorUi(EditorState& state, HWND hwnd, ID3D11Device* device, const std::vector<std::wstring>& droppedFiles)
 {
     hWID[0] = hwnd;
+    std::string windowTitle = "SC4Ed ImGui";
+    if (state.session.IsLoaded()) {
+        const std::string& path = state.session.Info().path;
+        const size_t slash = path.find_last_of("\\/");
+        windowTitle += " - " + path.substr(slash == std::string::npos ? 0 : slash + 1);
+        if (state.session.IsDirty()) {
+            windowTitle += " *";
+        }
+    }
+    static std::string previousWindowTitle;
+    if (windowTitle != previousWindowTitle) {
+        SetWindowTextA(hwnd, windowTitle.c_str());
+        previousWindowTitle = windowTitle;
+    }
+
     const bool emulatorUsesKeyboard = state.internalEmulatorRunning
         && Emulator::Instance()->GetState() != Emulator::EmuState::OFF
         && g_internalEmulatorCapturesKeyboard;
@@ -2629,12 +2832,21 @@ void DrawEditorUi(EditorState& state, HWND hwnd, ID3D11Device* device, const std
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     }
 
-    if (state.session.IsLoaded()
+    const bool editorShortcut = state.session.IsLoaded()
         && !emulatorUsesKeyboard
         && ImGui::GetIO().KeyCtrl
-        && !ImGui::GetIO().WantTextInput
-        && ImGui::IsKeyPressed(ImGuiKey_Z)) {
-        PerformUndo(state);
+        && !ImGui::GetIO().WantTextInput;
+    if (editorShortcut && ImGui::IsKeyPressed(ImGuiKey_S)) {
+        AddLog(state.session.Save() ? SaveLogMessage(state.session.Info().path) : "Save failed: " + state.session.LastError());
+    }
+    if (editorShortcut && ImGui::IsKeyPressed(ImGuiKey_Z)) {
+        if (ImGui::GetIO().KeyShift) {
+            PerformRedo(state);
+        } else {
+            PerformUndo(state);
+        }
+    } else if (editorShortcut && ImGui::IsKeyPressed(ImGuiKey_Y)) {
+        PerformRedo(state);
     }
 
     if (state.session.IsLoaded()

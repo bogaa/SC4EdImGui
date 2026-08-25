@@ -429,10 +429,10 @@ BYTE SC4Core::CheckROM()
 	}
 
 	if (type != 0xFF) {
-		expandedROM = (header->romSize == 0xC) && (romSize == 0x400000) && strcmp("EXPANDED ROM  ", (char *)(rom + 0x180000 + 0x8000 - expandedROMHeaderSize));
+		expandedHeader = rom + 0x100000 + 0x8000 - expandedROMHeaderSize;
+		expandedROM = (header->romSize == 0xC) && (romSize == 0x400000) &&
+			strncmp(expandedROMString, reinterpret_cast<const char*>(expandedHeader), strlen(expandedROMString)) == 0;
 		if (expandedROM) {
-			expandedHeader = rom + 0x100000 + 0x8000 - expandedROMHeaderSize;
-
 			GenerateExpandedOffset();
 
 			// update events location
@@ -5426,17 +5426,109 @@ void SC4Core::SaveEvents() {
 
 }
 
-bool SaveSpriteTileToExpandedPacket(SC4Core &core, DWORD packetAddr, unsigned spriteVramByteBase, unsigned tile, const BYTE *tileData) {
-	if (!core.rom || (packetAddr & 0xFFFF) == 0xFFFF) return false;
+static std::vector<BYTE> CompressSc4Graphics(const BYTE* source, unsigned size) {
+	std::vector<BYTE> packed;
+	packed.reserve(size + (size / 31) + 1);
+
+	auto repeatedLength = [&](unsigned offset) {
+		unsigned length = 1;
+		while (length < 33 && offset + length < size && source[offset + length] == source[offset]) ++length;
+		return length;
+	};
+	auto zeroPairLength = [&](unsigned offset) {
+		if (source[offset] != 0 || offset + 1 >= size) return 0u;
+		const BYTE value = source[offset + 1];
+		unsigned pairs = 0;
+		while (pairs < 33 && offset + pairs * 2 + 1 < size &&
+			source[offset + pairs * 2] == 0 && source[offset + pairs * 2 + 1] == value) ++pairs;
+		return pairs;
+	};
+	auto matchLength = [&](unsigned offset, unsigned candidate) {
+		unsigned length = 0;
+		while (length < 33 && offset + length < size && source[candidate + length] == source[offset + length]) ++length;
+		return length;
+	};
+	auto bestMatch = [&](unsigned offset, unsigned& bestSource) {
+		unsigned bestLength = 0;
+		bestSource = 0;
+		const unsigned windowStart = offset > 0x400 ? offset - 0x400 : 0;
+		for (unsigned candidate = windowStart; candidate < offset; ++candidate) {
+			unsigned resolvedSource = (offset & 0xFC00) | (candidate & 0x3FF);
+			if (resolvedSource >= offset) resolvedSource -= 0x400;
+			if (resolvedSource != candidate) continue;
+			const unsigned length = matchLength(offset, candidate);
+			if (length > bestLength) {
+				bestLength = length;
+				bestSource = candidate;
+			}
+		}
+		return bestLength;
+	};
+
+	for (unsigned offset = 0; offset < size;) {
+		const unsigned repeat = repeatedLength(offset);
+		if (source[offset] == 0 && repeat >= 2) {
+			packed.push_back(static_cast<BYTE>(0xE0 | (repeat - 2)));
+			offset += repeat;
+			continue;
+		}
+		if (repeat >= 3) {
+			packed.push_back(static_cast<BYTE>(0xC0 | (repeat - 2)));
+			packed.push_back(source[offset]);
+			offset += repeat;
+			continue;
+		}
+
+		const unsigned pairs = zeroPairLength(offset);
+		if (pairs >= 3) {
+			packed.push_back(static_cast<BYTE>(0xA0 | (pairs - 2)));
+			packed.push_back(source[offset + 1]);
+			offset += pairs * 2;
+			continue;
+		}
+
+		unsigned bestSource = 0;
+		const unsigned bestLength = bestMatch(offset, bestSource);
+		if (bestLength >= 3) {
+			const unsigned encoded = ((bestSource & 0x3FF) + 0x3DF) & 0x3FF;
+			packed.push_back(static_cast<BYTE>(((bestLength - 2) << 2) | (encoded >> 8)));
+			packed.push_back(static_cast<BYTE>(encoded));
+			offset += bestLength;
+			continue;
+		}
+
+		const size_t controlIndex = packed.size();
+		packed.push_back(0x81);
+		unsigned literalLength = 0;
+		while (literalLength < 31 && offset < size) {
+			packed.push_back(source[offset++]);
+			++literalLength;
+			unsigned nextMatchSource = 0;
+			if (offset < size && (repeatedLength(offset) >= 3 || zeroPairLength(offset) >= 3 ||
+				bestMatch(offset, nextMatchSource) >= 3)) break;
+		}
+		packed[controlIndex] = static_cast<BYTE>(0x80 | literalLength);
+	}
+
+	return packed;
+}
+
+static std::set<unsigned> SaveSpriteTilesToGraphicsPacket(
+	SC4Core &core,
+	DWORD packetAddr,
+	unsigned targetBaseAddress,
+	bool wramTarget,
+	const std::set<unsigned>& tiles) {
+	std::set<unsigned> savedTiles;
+	if (!core.rom || tiles.empty() || (packetAddr & 0xFFFF) == 0xFFFF) return savedTiles;
 
 	LPBYTE gfxPtr = core.rom + SNESCore::snes2pc(packetAddr);
-	if (*LPWORD(gfxPtr) == 0xFFFF) return false;
+	if (*LPWORD(gfxPtr) == 0xFFFF) return savedTiles;
 
 	bool oneAddr = *gfxPtr == 2;
 	unsigned addrBytes = (*gfxPtr == 0 || *gfxPtr == 2 || *gfxPtr == 3) ? 2 : 3;
 	gfxPtr += 2;
 
-	unsigned tileVramByteOffset = spriteVramByteBase + (tile << 5);
 	while (*LPWORD(gfxPtr) != 0xFFFF) {
 		DWORD dstAddr = *LPDWORD(gfxPtr) & (addrBytes == 3 ? 0xFFFFFF : 0xFFFF);
 		DWORD dstOffset = dstAddr & 0xFFFF;
@@ -5451,35 +5543,67 @@ bool SaveSpriteTileToExpandedPacket(SC4Core &core, DWORD packetAddr, unsigned sp
 		ZeroMemory(unpacked, sizeof(unpacked));
 		unsigned unpackedSize = GFXRLE(core.rom, unpacked, srcPc + 2, packedSize, core.type);
 
-		unsigned packetVramByteOffset = dstOffset * 2;
-		if (tileVramByteOffset >= packetVramByteOffset &&
-			tileVramByteOffset + 0x20 <= packetVramByteOffset + unpackedSize) {
-			memcpy(unpacked + (tileVramByteOffset - packetVramByteOffset), tileData, 0x20);
+		const unsigned packetByteAddress = addrBytes == 3 ? dstAddr : dstOffset * 2;
+		std::vector<unsigned> chunkTiles;
+		if ((addrBytes == 3) == wramTarget) {
+			for (unsigned tile : tiles) {
+				const unsigned targetByteAddress = targetBaseAddress + (tile << 5);
+				if (targetByteAddress >= packetByteAddress &&
+					targetByteAddress + 0x20 <= packetByteAddress + unpackedSize) {
+					BYTE tileData[0x20] = {};
+					if (wramTarget) {
+						const unsigned ramOffset = 0x10000 + (tile << 5);
+						if (ramOffset + sizeof(tileData) > sizeof(core.ram)) continue;
+						memcpy(tileData, core.ram + ramOffset, sizeof(tileData));
+					} else {
+						core.raw2tile4bpp(core.spriteCache + (tile << 6), tileData);
+					}
+					memcpy(unpacked + (targetByteAddress - packetByteAddress), tileData, sizeof(tileData));
+					chunkTiles.push_back(tile);
+				}
+			}
+		}
 
-			// Expanded ROM graphics are stored as an uncompressed SC4 RLE chunk.
-			// Original compressed chunks are often smaller, so skip them instead of corrupting neighbors.
-			unsigned newPackedSize = unpackedSize + 3;
+		if (!chunkTiles.empty()) {
+			const std::vector<BYTE> compressed = CompressSc4Graphics(unpacked, unpackedSize);
+			const unsigned newPackedSize = static_cast<unsigned>(compressed.size()) + 2;
 			if (newPackedSize <= packedSize) {
-				LPBYTE dst = core.rom + srcPc;
-				*LPWORD(dst) = WORD(newPackedSize);
-				dst += 2;
-				*dst++ = 0x80;
-				memcpy(dst, unpacked, unpackedSize);
-				return true;
+				std::vector<BYTE> verifySource(newPackedSize);
+				*LPWORD(verifySource.data()) = static_cast<WORD>(newPackedSize);
+				memcpy(verifySource.data() + 2, compressed.data(), compressed.size());
+				BYTE verified[0x10000] = {};
+				const unsigned verifiedSize = GFXRLE(
+					verifySource.data(), verified, 2, newPackedSize, core.type);
+				if (verifiedSize != unpackedSize || memcmp(verified, unpacked, unpackedSize) != 0) {
+					if (oneAddr) break;
+					continue;
+				}
+				*LPWORD(core.rom + srcPc) = static_cast<WORD>(newPackedSize);
+				memcpy(core.rom + srcPc + 2, compressed.data(), compressed.size());
+				if (newPackedSize < packedSize) {
+					memset(core.rom + srcPc + newPackedSize, 0xFF, packedSize - newPackedSize);
+				}
+				savedTiles.insert(chunkTiles.begin(), chunkTiles.end());
 			}
 		}
 
 		if (oneAddr) break;
 	}
 
-	return false;
+	return savedTiles;
+}
+
+static bool IsDirectExpandedGraphics(const SC4Core& core, unsigned dataOffset, unsigned unpackedSize) {
+	if (!core.rom || dataOffset < 3 || dataOffset > core.romSize || unpackedSize > core.romSize - dataOffset) return false;
+	const WORD packedSize = *LPWORD(core.rom + dataOffset - 3);
+	return core.rom[dataOffset - 1] == 0x80 && packedSize == unpackedSize + 3;
 }
 
 void SC4Core::SaveSprites() {
-	if (spriteUpdate.empty()) return;
+	if (spriteUpdate.empty() && simonSpriteUpdate.empty()) return;
 
 	unsigned spriteVramByteBase = type == 0 ? 0xC000 : type == 1 ? 0x0000 : 0x4000;
-	std::vector<unsigned> savedTiles;
+	std::set<unsigned> savedTiles;
 	std::vector<unsigned> offsetGroups;
 	offsetGroups.push_back(level);
 	if (level != numLevels && expandedOffset.count(numLevels)) {
@@ -5494,21 +5618,12 @@ void SC4Core::SaveSprites() {
 			memcpy(vram + spriteVramByteBase + (tile << 5), tileData, sizeof(tileData));
 		}
 
-		if (expandedROM && type == 0 && region == 0) {
-			static const DWORD whipPackets[] = {
-				0x81B3E2, // default whip, powerup, candle, orb, etc
-				0x81B3EB,
-				0x81B3FE,
-				0x81B411, // upgraded whip
-				0x81B424  // upgraded whip
-			};
+	}
 
-			for (auto packetAddr : whipPackets) {
-				SaveSpriteTileToExpandedPacket(*this, packetAddr, spriteVramByteBase, tile, tileData);
-			}
-		}
-
-		if (expandedROM) {
+	if (expandedROM) {
+		for (auto tile : spriteUpdate) {
+			BYTE tileData[0x20] = {};
+			raw2tile4bpp(spriteCache + (tile << 6), tileData);
 			unsigned vramByteOffset = spriteVramByteBase + (tile << 5);
 			bool saved = false;
 			for (auto group : offsetGroups) {
@@ -5521,9 +5636,10 @@ void SC4Core::SaveSprites() {
 					unsigned expandedByteOffset = expandedDstAddr * 2;
 					unsigned expandedRomOffset = entry.second.first;
 					unsigned expandedSize = entry.second.second;
-					if (vramByteOffset >= expandedByteOffset && vramByteOffset + sizeof(tileData) <= expandedByteOffset + expandedSize) {
+					if (IsDirectExpandedGraphics(*this, expandedRomOffset, expandedSize) &&
+						vramByteOffset >= expandedByteOffset && vramByteOffset + sizeof(tileData) <= expandedByteOffset + expandedSize) {
 						memcpy(rom + expandedRomOffset + (vramByteOffset - expandedByteOffset), tileData, sizeof(tileData));
-						savedTiles.push_back(tile);
+						savedTiles.insert(tile);
 						saved = true;
 						break;
 					}
@@ -5536,6 +5652,65 @@ void SC4Core::SaveSprites() {
 
 	for (auto tile : savedTiles) {
 		spriteUpdate.erase(tile);
+	}
+
+	if (type == 0 && region == 0 && !spriteUpdate.empty()) {
+		static const DWORD spritePackets[] = {
+			0x81B3E2, 0x81B3EB, 0x81B3FE, 0x81B411, 0x81B424
+		};
+		for (DWORD packetAddr : spritePackets) {
+			const auto packetTiles = SaveSpriteTilesToGraphicsPacket(
+				*this, packetAddr, spriteVramByteBase, false, spriteUpdate);
+			savedTiles.insert(packetTiles.begin(), packetTiles.end());
+		}
+		const DWORD levelSpritePacket = 0x860000 | *LPWORD(rom + SNESCore::snes2pc(0x868B45) + (level * 2));
+		const auto levelTiles = SaveSpriteTilesToGraphicsPacket(
+			*this, levelSpritePacket, spriteVramByteBase, false, spriteUpdate);
+		savedTiles.insert(levelTiles.begin(), levelTiles.end());
+		for (DWORD packetAddr : dynDecTable) {
+			const auto packetTiles = SaveSpriteTilesToGraphicsPacket(
+				*this, packetAddr, spriteVramByteBase, false, spriteUpdate);
+			savedTiles.insert(packetTiles.begin(), packetTiles.end());
+		}
+		for (unsigned tile : savedTiles) spriteUpdate.erase(tile);
+	}
+
+	std::set<unsigned> savedSimonTiles;
+	if (type == 0) {
+		for (auto tile : simonSpriteUpdate) {
+			if (!expandedROM) continue;
+			const unsigned ramOffset = 0x10000 + (tile << 5);
+			if (ramOffset + 0x20 > sizeof(ram)) continue;
+			const unsigned wramAddress = 0x7F0000 + (tile << 5);
+			bool saved = false;
+			for (auto group : offsetGroups) {
+				if (!expandedOffset.count(group)) continue;
+				for (auto &entry : expandedOffset[group]) {
+					const unsigned expandedDstAddress = entry.first;
+					const unsigned expandedRomOffset = entry.second.first;
+					const unsigned expandedSize = entry.second.second;
+					if (IsDirectExpandedGraphics(*this, expandedRomOffset, expandedSize) &&
+						wramAddress >= expandedDstAddress &&
+						wramAddress + 0x20 <= expandedDstAddress + expandedSize &&
+						expandedRomOffset + (wramAddress - expandedDstAddress) + 0x20 <= romSize) {
+						memcpy(rom + expandedRomOffset + (wramAddress - expandedDstAddress), ram + ramOffset, 0x20);
+						savedSimonTiles.insert(tile);
+						saved = true;
+						break;
+					}
+				}
+				if (saved) break;
+			}
+		}
+	}
+
+	for (auto tile : savedSimonTiles) {
+		simonSpriteUpdate.erase(tile);
+	}
+	if (type == 0 && !simonSpriteUpdate.empty()) {
+		const auto packetTiles = SaveSpriteTilesToGraphicsPacket(
+			*this, region == 0 ? 0x81B4AC : 0x81B480, 0x7F0000, true, simonSpriteUpdate);
+		for (unsigned tile : packetTiles) simonSpriteUpdate.erase(tile);
 	}
 }
 

@@ -30,7 +30,9 @@ struct RomUndoSnapshot {
     std::vector<uint16_t> mapping;
     std::vector<EventUndoSnapshot> events;
     std::vector<unsigned> spriteUpdate;
+    std::vector<unsigned> simonSpriteUpdate;
     int selectedEventIndex = -1;
+    uint64_t revision = 0;
 };
 
 class RomSession {
@@ -51,6 +53,7 @@ public:
     bool SaveAs(const std::string& path);
 
     bool IsLoaded() const { return loaded_; }
+    bool IsDirty() const { return dirty_; }
     const RomInfo& Info() const { return info_; }
     SC4Core& Core();
     const SC4Core& Core() const;
@@ -60,6 +63,8 @@ public:
     int CurrentLevel() const;
     int Region() const;
     bool IsExpandedRom() const;
+    void BeginEdit();
+    std::vector<uint8_t> CurrentRomBytes();
     unsigned ReadRom(unsigned snesAddress, int byteCount) const;
     void WriteRom(unsigned snesAddress, int byteCount, unsigned value);
     void WriteRomPc(unsigned pcOffset, int byteCount, unsigned value);
@@ -73,6 +78,9 @@ private:
     RomInfo info_;
     bool loaded_ = false;
     bool dirty_ = false;
+    uint64_t revision_ = 0;
+    uint64_t savedRevision_ = 0;
+    uint64_t nextRevision_ = 1;
     int levelCount_ = 0;
     std::string lastError_;
 };

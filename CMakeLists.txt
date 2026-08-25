@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.24)
 
 project(SC4EdImgui LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -15,10 +17,14 @@ if(NOT EXISTS "${IMGUI_DIR}/imgui.cpp")
 endif()
 
 set(APP_SOURCES
+    src/app/BpsPatch.cpp
     src/app/D3D11Host.cpp
     src/app/EventNames.cpp
     src/app/HudEditor.cpp
+    src/app/ImageClipboard.cpp
+    src/app/InstrumentEditor.cpp
     src/app/LevelRenderer.cpp
+    src/app/MusicEditor.cpp
     src/app/main.cpp
     src/app/PropertyPanel.cpp
     src/app/RomInfo.cpp
@@ -84,6 +90,16 @@ target_link_libraries(SC4EdImGui PRIVATE
     windowscodecs
     shell32
 )
+
+if(BUILD_TESTING)
+    add_executable(BpsPatchTests
+        tests/BpsPatchTests.cpp
+        src/app/BpsPatch.cpp
+    )
+    target_include_directories(BpsPatchTests PRIVATE src/app)
+    add_test(NAME BpsPatchRoundTrip COMMAND BpsPatchTests)
+
+endif()
 
 set(RETRO_DLL "${CMAKE_CURRENT_SOURCE_DIR}/runtime/retro.dll")
 if(EXISTS "${RETRO_DLL}")

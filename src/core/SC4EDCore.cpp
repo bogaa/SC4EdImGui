@@ -60,6 +60,13 @@ bool SC4EDCore::LoadNewRom(LPCSTR fileName)
 {
 	if (fileName[0] == NULL)
 		return false;
+	// Reopening the currently loaded path otherwise conflicts with our own
+	// non-write-sharing file handle before FreeRom() gets a chance to close it.
+	if (hFile && _stricmp(filePath, fileName) == 0)
+	{
+		CloseHandle(hFile);
+		hFile = NULL;
+	}
 	HANDLE hNewFile = CreateFile(fileName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
 	if (hNewFile != INVALID_HANDLE_VALUE)
 	{

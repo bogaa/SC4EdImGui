@@ -32,6 +32,10 @@
 *.ilk
 *.recipe
 *.log
+*.mid
+
+# Locally extracted and generated editor assets
+/exports/
 
 # Visual Studio
 /.vs/

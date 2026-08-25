@@ -556,7 +556,8 @@ bool Emulator::LoadRom(LPBYTE rom, unsigned size) {
 	//emuReadOrder.store(true, std::memory_order_release);
 	ReleaseToEmu();
 
-	PostThreadMessage(threadId, Message::LOADROM, (WPARAM)size, (LPARAM)localRom.get());
+	const Message loadMessage = snesState > SnesState::OFF ? Message::RELOADROM : Message::LOADROM;
+	PostThreadMessage(threadId, loadMessage, (WPARAM)size, (LPARAM)localRom.get());
 	MSG msg;
 	if (!WaitForSnesStateMessage(msg, 2000, "Internal emulator did not answer ROM load.")) {
 		Terminate();

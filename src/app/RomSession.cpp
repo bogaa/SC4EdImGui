@@ -47,6 +47,27 @@ bool RomSession::IsExpandedRom() const
     return core_->expandedROM;
 }
 
+void RomSession::BeginEdit()
+{
+    if (!loaded_) {
+        return;
+    }
+    revision_ = nextRevision_++;
+    dirty_ = revision_ != savedRevision_;
+}
+
+std::vector<uint8_t> RomSession::CurrentRomBytes()
+{
+    if (!loaded_ || !core_->rom) {
+        return {};
+    }
+
+    core_->SaveEvents();
+    core_->SaveLevel();
+    const BYTE* fileStart = core_->rom - core_->dummyHeader;
+    return std::vector<uint8_t>(fileStart, fileStart + core_->romSize);
+}
+
 unsigned RomSession::ReadRom(unsigned snesAddress, int byteCount) const
 {
     if (!loaded_ || snesAddress == 0 || byteCount <= 0) {
@@ -88,8 +109,10 @@ void RomSession::WriteRomPc(unsigned pcOffset, int byteCount, unsigned value)
     case 4:
         *reinterpret_cast<DWORD*>(p) = static_cast<DWORD>(value);
         break;
+    default:
+        return;
     }
-    dirty_ = true;
+    BeginEdit();
 }
 
 void RomSession::WriteRomAll(const std::vector<unsigned>& snesAddresses, int byteCount, unsigned value)
@@ -106,7 +129,8 @@ RomUndoSnapshot RomSession::CreateUndoSnapshot(int selectedEventIndex) const
         return snapshot;
     }
 
-    snapshot.rom.assign(core_->rom, core_->rom + core_->romSize);
+    const BYTE* fileStart = core_->rom - core_->dummyHeader;
+    snapshot.rom.assign(fileStart, fileStart + core_->romSize);
     snapshot.ram.assign(core_->ram, core_->ram + sizeof(core_->ram));
     snapshot.vram.assign(core_->vram, core_->vram + sizeof(core_->vram));
     snapshot.vramCache.assign(core_->vramCache, core_->vramCache + sizeof(core_->vramCache));
@@ -126,7 +150,9 @@ RomUndoSnapshot RomSession::CreateUndoSnapshot(int selectedEventIndex) const
         snapshot.events.push_back(copy);
     }
     snapshot.spriteUpdate.assign(core_->spriteUpdate.begin(), core_->spriteUpdate.end());
+    snapshot.simonSpriteUpdate.assign(core_->simonSpriteUpdate.begin(), core_->simonSpriteUpdate.end());
     snapshot.selectedEventIndex = selectedEventIndex;
+    snapshot.revision = revision_;
     return snapshot;
 }
 
@@ -137,7 +163,8 @@ void RomSession::RestoreUndoSnapshot(const RomUndoSnapshot& snapshot, int& selec
     }
 
     const size_t romSize = (std::min)(static_cast<size_t>(core_->romSize), snapshot.rom.size());
-    std::memcpy(core_->rom, snapshot.rom.data(), romSize);
+    BYTE* fileStart = core_->rom - core_->dummyHeader;
+    std::memcpy(fileStart, snapshot.rom.data(), romSize);
     if (snapshot.ram.size() == sizeof(core_->ram)) {
         std::memcpy(core_->ram, snapshot.ram.data(), sizeof(core_->ram));
     }
@@ -169,17 +196,23 @@ void RomSession::RestoreUndoSnapshot(const RomUndoSnapshot& snapshot, int& selec
     }
     core_->spriteUpdate.clear();
     core_->spriteUpdate.insert(snapshot.spriteUpdate.begin(), snapshot.spriteUpdate.end());
+    core_->simonSpriteUpdate.clear();
+    core_->simonSpriteUpdate.insert(snapshot.simonSpriteUpdate.begin(), snapshot.simonSpriteUpdate.end());
     selectedEventIndex = snapshot.selectedEventIndex;
     if (selectedEventIndex >= static_cast<int>(core_->eventTable.size())) {
         selectedEventIndex = core_->eventTable.empty() ? -1 : static_cast<int>(core_->eventTable.size()) - 1;
     }
-    dirty_ = true;
+    revision_ = snapshot.revision;
+    dirty_ = revision_ != savedRevision_;
 }
 
 bool RomSession::OpenRom(const std::string& path)
 {
     loaded_ = false;
     dirty_ = false;
+    revision_ = 0;
+    savedRevision_ = 0;
+    nextRevision_ = 1;
     lastError_.clear();
 
     if (!LoadRomInfo(path, info_)) {
@@ -209,14 +242,21 @@ bool RomSession::Save()
         return false;
     }
 
+    const std::vector<uint8_t> romBeforeSave(core_->rom, core_->rom + core_->romSize);
     core_->SaveEvents();
     core_->SaveLevel();
+    if (!core_->spriteUpdate.empty() || !core_->simonSpriteUpdate.empty()) {
+        std::memcpy(core_->rom, romBeforeSave.data(), romBeforeSave.size());
+        lastError_ = "One or more edited sprite tiles did not fit in their ROM graphics packet. Expand the ROM and save again.";
+        return false;
+    }
     if (!core_->SaveRom(core_->filePath)) {
         lastError_ = "Could not save ROM.";
         return false;
     }
 
     LoadRomInfo(core_->filePath, info_);
+    savedRevision_ = revision_;
     dirty_ = false;
     lastError_.clear();
     return true;
@@ -283,7 +323,7 @@ bool RomSession::DeleteEvent(int& eventIndex)
         eventIndex = static_cast<int>(core_->eventTable.size()) - 1;
     }
 
-    dirty_ = true;
+    BeginEdit();
     lastError_.clear();
     return true;
 }
@@ -296,7 +336,7 @@ void RomSession::SortEvents()
 
     core_->SortEvents();
     core_->SaveEvents();
-    dirty_ = true;
+    BeginEdit();
 }
 
 void RomSession::SlotEvents()
@@ -307,7 +347,7 @@ void RomSession::SlotEvents()
 
     core_->SlotEvents();
     core_->SaveEvents();
-    dirty_ = true;
+    BeginEdit();
 }
 
 void RomSession::SaveEvents()
@@ -317,7 +357,7 @@ void RomSession::SaveEvents()
     }
 
     core_->SaveEvents();
-    dirty_ = true;
+    BeginEdit();
 }
 
 bool RomSession::AddEvent(const EventInfo& event, int* eventIndex)
@@ -354,7 +394,7 @@ bool RomSession::AddEvent(const EventInfo& event, int* eventIndex)
         }
     }
 
-    dirty_ = true;
+    BeginEdit();
     lastError_.clear();
     return true;
 }
@@ -372,7 +412,7 @@ bool RomSession::ExpandRom()
     }
 
     LoadRomInfo(core_->filePath, info_);
-    dirty_ = true;
+    BeginEdit();
     lastError_.clear();
     return true;
 }

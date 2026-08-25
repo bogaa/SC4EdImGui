@@ -718,7 +718,7 @@ void LevelRenderer::DrawBlockEditor(EditorState& state)
     state.selectedBlock = static_cast<uint16_t>(state.selectedBlock & (core.numBlocks - 1));
     state.selectedTile = static_cast<uint16_t>(state.selectedTile & (core.isMode7() ? 0xFF : 0x3FF));
     state.selectedBlockCell = std::clamp(state.selectedBlockCell, 0, 15);
-    state.tilePaletteId &= 0xF;
+    state.tilePaletteId &= 0x7;
 
     int blockValue = state.selectedBlock;
     ImGui::SetNextItemWidth(90.0f);
@@ -836,7 +836,8 @@ void LevelRenderer::DrawBlockEditor(EditorState& state)
     const auto selectedTileMap = [&]() -> WORD {
         return static_cast<WORD>(
             (state.selectedTile & (core.isMode7() ? 0xFF : 0x3FF))
-            | (core.isMode7() ? 0 : ((state.tilePaletteId & 0xF) << 10))
+            | (core.isMode7() ? 0 : ((state.tilePaletteId & 0x7) << 10))
+            | (!core.isMode7() && state.tileLayerPriority ? 0x2000 : 0)
             | (state.tileFlipX ? 0x4000 : 0)
             | (state.tileFlipY ? 0x8000 : 0));
     };
@@ -845,7 +846,8 @@ void LevelRenderer::DrawBlockEditor(EditorState& state)
         const WORD map = blockTiles[cell];
         state.selectedBlockCell = cell;
         state.selectedTile = static_cast<uint16_t>(core.isMode7() ? (map & 0xFF) : (map & 0x3FF));
-        state.tilePaletteId = core.isMode7() ? 0 : ((map >> 10) & 0xF);
+        state.tilePaletteId = core.isMode7() ? 0 : ((map >> 10) & 0x7);
+        state.tileLayerPriority = !core.isMode7() && (map & 0x2000) != 0;
         state.tileFlipX = (map & 0x4000) != 0;
         state.tileFlipY = (map & 0x8000) != 0;
     };
@@ -903,14 +905,15 @@ void LevelRenderer::DrawBlockEditor(EditorState& state)
         state.selectedTile = static_cast<uint16_t>(tileValue);
     }
     if (!core.isMode7()) {
-        int palette = static_cast<int>(state.tilePaletteId & 0xF);
+        int palette = static_cast<int>(state.tilePaletteId & 0x7);
         ImGui::SetNextItemWidth(90.0f);
         if (ImGui::InputInt("Palette ID", &palette)) {
-            state.tilePaletteId = static_cast<unsigned>(std::clamp(palette, 0, 15));
+            state.tilePaletteId = static_cast<unsigned>(std::clamp(palette, 0, 7));
         }
         ImGui::Checkbox("H Flip", &state.tileFlipX);
         ImGui::SameLine();
         ImGui::Checkbox("V Flip", &state.tileFlipY);
+        ImGui::Checkbox("Layer Priority", &state.tileLayerPriority);
     }
 
     const WORD previewMap = selectedTileMap();
@@ -947,7 +950,8 @@ void LevelRenderer::DrawBlockEditor(EditorState& state)
             const bool selected = state.selectedTile == tile;
             const WORD map = static_cast<WORD>(
                 (tile & (core.isMode7() ? 0xFF : 0x3FF))
-                | (core.isMode7() ? 0 : ((state.tilePaletteId & 0xF) << 10)));
+                | (core.isMode7() ? 0 : ((state.tilePaletteId & 0x7) << 10))
+                | (!core.isMode7() && state.tileLayerPriority ? 0x2000 : 0));
             drawList->AddRectFilled(tileMin, ImVec2(tileMin.x + tileCellSize, tileMin.y + tileCellSize), IM_COL32(10, 12, 14, 255));
             DrawTilePreview(core, drawList, ImVec2(tileMin.x + 5.0f, tileMin.y + 5.0f), map, 4.0f);
             drawList->AddRect(tileMin, ImVec2(tileMin.x + tileCellSize, tileMin.y + tileCellSize), selected ? IM_COL32(255, 235, 120, 255) : IM_COL32(72, 82, 88, 190), 0.0f, 0, selected ? 2.0f : 1.0f);
@@ -1892,7 +1896,7 @@ void LevelRenderer::DrawBlockPreview(SC4Core& core, ImDrawList* drawList, ImVec2
 
 void LevelRenderer::DrawTilePreview(SC4Core& core, ImDrawList* drawList, ImVec2 pos, uint16_t tile, float scale, ImU8 alpha, int paletteOverride) const
 {
-    BYTE palette = static_cast<BYTE>((tile >> 6) & 0xF0);
+    BYTE palette = static_cast<BYTE>(((tile >> 10) & 0x7) << 4);
     unsigned tileIndex = tile & 0x3FF;
     if (core.isMode7()) {
         tileIndex = tile & 0xFF;

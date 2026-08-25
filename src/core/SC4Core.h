@@ -179,6 +179,7 @@ public:
 
 	// SPRITE
 	std::set<unsigned> spriteUpdate;
+	std::set<unsigned> simonSpriteUpdate;
 
 	// FONT
 	WORD fontPalCache[0x20];

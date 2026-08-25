@@ -106,6 +106,7 @@ public:
 	static Emulator *Instance() { return emu.get(); }
 
 	bool Init();
+	bool IsInitialized() const { return threadHandle && threadId != DWORD(-1); }
 	bool LoadRom(LPBYTE rom, unsigned size);
 	bool LoadLevel(int num);
 	void UpdateSaveState(bool store, unsigned slot);

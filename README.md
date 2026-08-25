@@ -4,6 +4,15 @@ SC4Ed ImGui is a modern Dear ImGui/Direct3D 11 editor for Super Castlevania IV R
 
 The original SC4Ed was developed by [RedGuyyyy](https://github.com/RedGuyyyy?tab=repositories), with more project history on the [RHDN forum thread](https://www.romhacking.net/forum/index.php?topic=21867.msg336111#msg336111). SC4Ed was built on ideas from [MegaEDX](https://github.com/Xeeynamo/MegaEdX/tree/master).
 
+## Features
+
+- Docked level editor with foreground/background painting, collision, events, grid, camera bounds, and tile layer priority.
+- Event placement, selection, drag/copy, sorting, editing, and ROM persistence.
+- Block, tile behavior, palette, sprite, HUD, and scratch-board image editors.
+- Music editor with MIDI import/export, track mapping, instruments, volume, tempo, notes, and loop markers.
+- BRR instrument sample replacement from WAV files for all 20 CV4 instruments.
+- Internal emulator view, undo/redo, unsaved-change protection, ROM expansion, and BPS patch export.
+
 ## Layout
 
 - `src/app/` - the ImGui editor application.
@@ -29,6 +38,14 @@ cmake --build --preset imgui-debug-win32
 ```
 
 The executable is written under `build/Debug/SC4EdImGui.exe`.
+
+For a distributable build:
+
+```powershell
+cmake --build build --config Release
+```
+
+The executable is written under `build/Release/SC4EdImGui.exe`.
 
 ## Notes
 
