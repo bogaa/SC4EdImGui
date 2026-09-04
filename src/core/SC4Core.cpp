@@ -2562,7 +2562,7 @@ bool SC4Core::ExpandROM() {
 			addrList.push_back({0x81B5A7, numLevels });
 			addrList.push_back({0x81B5CE, numLevels });
 			addrList.push_back({0x81B5D7, numLevels });
-			addrList.push_back({0x81B5F9, numLevels });
+			addrList.push_back({0x81B5F9, numLevels }); // music engine
 			addrList.push_back({0x81E267, numLevels });
 			addrList.push_back({0x81E843, numLevels });
 			addrList.push_back({0x81F349, numLevels });

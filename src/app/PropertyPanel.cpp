@@ -32,19 +32,35 @@ struct PropertyUiState {
 
 static PropertyUiState g_propertyState;
 
-static constexpr unsigned SUBWEAPON_DAMAGE_BASE = 0x81A6F8;
-static constexpr unsigned TRIPLE_SHOT_PICKUP_JML = 0x80DFA3;
-static constexpr unsigned AXE_STATE01_HOOK = 0x80BB05;
-static constexpr unsigned KNIFE_STATE_POINTER = 0x80BA50;
-static constexpr unsigned KNIFE_STATE_JML_STUB = 0x80FEDB;
-static constexpr unsigned CLEAR_SELECTED_EVENT_SLOT_ALL = 0x808C59;
-static constexpr unsigned LUNCH_SFX_FROM_ACCUM = 0x8085E3;
-static constexpr unsigned READ_COLLISION_TABLE_7E4000 = 0x80CF86;
-static constexpr unsigned MAKE_THIS_ENTITY_PLATFORM = 0x82C312;
-static constexpr unsigned AXE_COUNTER = 0x80BB3A;
-static constexpr unsigned AXE_ANIMATION = 0x80BB44;
-static constexpr unsigned AXE_SPEED_MOVEMENT = 0x80BB11;
-static constexpr unsigned CRUMBLE_BLOCK_BURN = 0x8290D1;
+// data tables level
+static constexpr unsigned LEVEL_BG_PROPERTY_MASK_BASE = 0x85C7BE; // transparency and such
+static constexpr unsigned LEVEL_BG_SCROLL_BASE = 0x85C846;  // done different..
+static constexpr unsigned LEVEL_TILE1_ANIMATION_POINTER_BASE = 0x85C846;
+static constexpr unsigned LEVEL_TILE2_ANIMATION_POINTER_BASE = 0x85cb0a;
+static constexpr unsigned LEVEL_PALETTE_ANIMATION_POINTER_BASE = 0x86946f;
+
+// data tables event
+static constexpr unsigned SUBWEAPON_DAMAGE_BASE = 0x81A6F8; 
+static constexpr unsigned EVENT_HITBOX_BASE = 0x81ab00;
+static constexpr unsigned EVENT_HEALTH_BASE = 0x81ac00;
+static constexpr unsigned EVENT_HIT_ATTRIBUTE_BASE = 0x81ad00; // 01 hurt, 04 whip hitable, 08 collect able also needs bit 01 set, 10 ??, 20 ??, 40 rossery, 80 noDespawn 
+static constexpr unsigned EVENT_DEATH_ANIMATION_BASE = 0x81ae00;
+static constexpr unsigned EVENT__BASE = 0x81ae80;
+static constexpr unsigned EVENT_DAMAGE_BASE = 0x81af00;
+
+// routines
+// static constexpr unsigned TRIPLE_SHOT_PICKUP_JML = 0x80DFA3;
+// static constexpr unsigned AXE_STATE01_HOOK = 0x80BB05;
+// static constexpr unsigned KNIFE_STATE_POINTER = 0x80BA50;
+// static constexpr unsigned KNIFE_STATE_JML_STUB = 0x80FEDB;
+// static constexpr unsigned CLEAR_SELECTED_EVENT_SLOT_ALL = 0x808C59;
+// static constexpr unsigned LUNCH_SFX_FROM_ACCUM = 0x8085E3;
+// static constexpr unsigned READ_COLLISION_TABLE_7E4000 = 0x80CF86;
+// static constexpr unsigned MAKE_THIS_ENTITY_PLATFORM = 0x82C312;
+// static constexpr unsigned AXE_COUNTER = 0x80BB3A;
+// static constexpr unsigned AXE_ANIMATION = 0x80BB44;
+// static constexpr unsigned AXE_SPEED_MOVEMENT = 0x80BB11;
+// static constexpr unsigned CRUMBLE_BLOCK_BURN = 0x8290D1;
 
 static float ValueColumnWidth()
 {
@@ -462,7 +478,7 @@ static void DrawCurrentLevelEnemies(EditorState& state)
     }
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Enemies");
+    ImGui::TextUnformatted("Enemie set for current level");
     ImGui::TextDisabled("Set ID pointer: $%06X -> $%06X", pointerTableAddress, enemyListAddress);
 
     if (enemyCount == 0) {
@@ -532,613 +548,8 @@ static void DrawGeneralProperties(EditorState& state)
     }
 }
 
-struct KnifePickupModeLocation {
-    unsigned address = 0;
-    unsigned value = 0;
-    int byteCount = 0;
-};
+//struct KnifePickupModeLocation {
 
-static bool CanReadRomPc(const SC4Core& core, unsigned pcOffset, unsigned byteCount)
-{
-    return core.rom && pcOffset <= core.romSize && byteCount <= core.romSize - pcOffset;
-}
-
-static bool TrySnesToPc(const SC4Core& core, unsigned snesAddress, unsigned byteCount, unsigned& pcOffset)
-{
-    if (snesAddress == 0 || !core.rom) {
-        return false;
-    }
-    pcOffset = SNESCore::snes2pc(static_cast<int>(snesAddress));
-    return CanReadRomPc(core, pcOffset, byteCount);
-}
-
-static unsigned ReadRomLong24(EditorState& state, unsigned address)
-{
-    return state.session.ReadRom(address, 2) | (state.session.ReadRom(address + 2, 1) << 16);
-}
-
-static void EmitByte(std::vector<unsigned char>& code, unsigned value)
-{
-    code.push_back(static_cast<unsigned char>(value & 0xFFu));
-}
-
-static void EmitWord(std::vector<unsigned char>& code, unsigned value)
-{
-    EmitByte(code, value);
-    EmitByte(code, value >> 8);
-}
-
-static void EmitLong24(std::vector<unsigned char>& code, unsigned value)
-{
-    EmitByte(code, value);
-    EmitByte(code, value >> 8);
-    EmitByte(code, value >> 16);
-}
-
-static size_t EmitBranch8(std::vector<unsigned char>& code, unsigned opcode)
-{
-    EmitByte(code, opcode);
-    const size_t operandOffset = code.size();
-    EmitByte(code, 0);
-    return operandOffset;
-}
-
-static void PatchBranch8(std::vector<unsigned char>& code, size_t operandOffset, size_t targetOffset)
-{
-    const int relative = static_cast<int>(targetOffset) - static_cast<int>(operandOffset + 1);
-    code[operandOffset] = static_cast<unsigned char>(relative & 0xFF);
-}
-
-static size_t EmitBranch16(std::vector<unsigned char>& code)
-{
-    EmitByte(code, 0x82);
-    const size_t operandOffset = code.size();
-    EmitWord(code, 0);
-    return operandOffset;
-}
-
-static void PatchBranch16(std::vector<unsigned char>& code, size_t operandOffset, size_t targetOffset)
-{
-    const int relative = static_cast<int>(targetOffset) - static_cast<int>(operandOffset + 2);
-    code[operandOffset] = static_cast<unsigned char>(relative & 0xFF);
-    code[operandOffset + 1] = static_cast<unsigned char>((relative >> 8) & 0xFF);
-}
-
-static std::vector<unsigned char> BuildKnifePlatformRoutine(unsigned routineAddress)
-{
-    std::vector<unsigned char> code;
-
-    EmitByte(code, 0x08);                                    // PHP
-    EmitByte(code, 0xC2); EmitByte(code, 0x30);              // REP #$30
-    EmitByte(code, 0xA5); EmitByte(code, 0x90);              // LDA $90
-    size_t hasMode = EmitBranch8(code, 0xD0);                // BNE hasMode
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x6B);                                    // RTL
-    PatchBranch8(code, hasMode, code.size());
-
-    EmitByte(code, 0xC9); EmitWord(code, 0x0003);            // CMP #$0003
-    size_t isPlatform = EmitBranch8(code, 0xF0);             // BEQ platform
-    EmitByte(code, 0xC9); EmitWord(code, 0x0002);            // CMP #$0002
-    size_t isKey = EmitBranch8(code, 0xF0);                  // BEQ key
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x6B);                                    // RTL
-    PatchBranch8(code, isKey, code.size());
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x6B);                                    // key: RTL
-
-    PatchBranch8(code, isPlatform, code.size());
-    EmitByte(code, 0xB5); EmitByte(code, 0x1A);              // LDA $1A,x
-    size_t noMovement = EmitBranch8(code, 0xF0);             // BEQ noMovement
-    EmitByte(code, 0xDA);                                    // PHX
-    EmitByte(code, 0x22); EmitLong24(code, 0);               // JSL collision helper (patched below)
-    const size_t collisionHelperOperand = code.size() - 3;
-    size_t noWall = EmitBranch8(code, 0xF0);                 // BEQ noWall
-    EmitByte(code, 0xFA);                                    // PLX
-    EmitByte(code, 0x74); EmitByte(code, 0x1A);              // STZ $1A,x
-    EmitByte(code, 0xDA);                                    // PHX
-    PatchBranch8(code, noWall, code.size());
-    EmitByte(code, 0xFA);                                    // PLX
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x6B);                                    // RTL
-
-    PatchBranch8(code, noMovement, code.size());
-    EmitByte(code, 0xF6); EmitByte(code, 0x20);              // INC $20,x
-    EmitByte(code, 0xB5); EmitByte(code, 0x20);              // LDA $20,x
-    EmitByte(code, 0xC9); EmitWord(code, 0x0080);            // CMP #$0080
-    size_t skipBlink = EmitBranch8(code, 0x90);              // BCC skipBlink
-    EmitByte(code, 0xB5); EmitByte(code, 0x00);              // LDA $00,x
-    size_t restoreBlink = EmitBranch8(code, 0xF0);           // BEQ restoreBlink
-    EmitByte(code, 0x95); EmitByte(code, 0x22);              // STA $22,x
-    EmitByte(code, 0xA5); EmitByte(code, 0x3A);              // LDA $3A
-    EmitByte(code, 0x89); EmitWord(code, 0x0010);            // BIT #$0010
-    size_t restoreBlink2 = EmitBranch8(code, 0xF0);          // BEQ restoreBlink
-    EmitByte(code, 0x74); EmitByte(code, 0x00);              // STZ $00,x
-    size_t afterBlink = EmitBranch8(code, 0x80);             // BRA afterBlink
-    PatchBranch8(code, restoreBlink, code.size());
-    PatchBranch8(code, restoreBlink2, code.size());
-    EmitByte(code, 0xB5); EmitByte(code, 0x22);              // LDA $22,x
-    EmitByte(code, 0x95); EmitByte(code, 0x00);              // STA $00,x
-    PatchBranch8(code, afterBlink, code.size());
-
-    PatchBranch8(code, skipBlink, code.size());
-    EmitByte(code, 0xB5); EmitByte(code, 0x20);              // LDA $20,x
-    EmitByte(code, 0xC9); EmitWord(code, 0x0100);            // CMP #$0100
-    size_t makePlatform = EmitBranch8(code, 0x90);           // BCC makePlatform
-    EmitByte(code, 0xEC); EmitWord(code, 0x13C8);            // CPX $13C8
-    size_t notTracked = EmitBranch8(code, 0xD0);             // BNE notTracked
-    EmitByte(code, 0x64); EmitByte(code, 0x80);              // STZ $80
-    PatchBranch8(code, notTracked, code.size());
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x5C); EmitLong24(code, CLEAR_SELECTED_EVENT_SLOT_ALL);
-
-    PatchBranch8(code, makePlatform, code.size());
-    EmitByte(code, 0x22); EmitLong24(code, MAKE_THIS_ENTITY_PLATFORM);
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x6B);                                    // RTL
-
-    const unsigned collisionHelperAddress = routineAddress + static_cast<unsigned>(code.size());
-    code[collisionHelperOperand + 0] = static_cast<unsigned char>(collisionHelperAddress & 0xFFu);
-    code[collisionHelperOperand + 1] = static_cast<unsigned char>((collisionHelperAddress >> 8) & 0xFFu);
-    code[collisionHelperOperand + 2] = static_cast<unsigned char>((collisionHelperAddress >> 16) & 0xFFu);
-
-    EmitByte(code, 0xB5); EmitByte(code, 0x0E);              // LDA $0E,x
-    EmitByte(code, 0x85); EmitByte(code, 0x02);              // STA $02
-    EmitByte(code, 0xB5); EmitByte(code, 0x1A);              // LDA $1A,x
-    size_t positiveSpeed = EmitBranch8(code, 0x10);          // BPL positiveSpeed
-    EmitByte(code, 0xB5); EmitByte(code, 0x0A);              // LDA $0A,x
-    EmitByte(code, 0x38);                                    // SEC
-    EmitByte(code, 0xE9); EmitWord(code, 0x000C);            // SBC #$000C
-    size_t storeCollisionX = EmitBranch8(code, 0x80);        // BRA storeCollisionX
-    PatchBranch8(code, positiveSpeed, code.size());
-    EmitByte(code, 0xA9); EmitWord(code, 0x000C);            // LDA #$000C
-    EmitByte(code, 0x18);                                    // CLC
-    EmitByte(code, 0x75); EmitByte(code, 0x0A);              // ADC $0A,x
-    PatchBranch8(code, storeCollisionX, code.size());
-    EmitByte(code, 0x85); EmitByte(code, 0x00);              // STA $00
-    EmitByte(code, 0x5C); EmitLong24(code, READ_COLLISION_TABLE_7E4000);
-
-    return code;
-}
-
-static std::vector<unsigned char> BuildTriplePickupRoutine()
-{
-    std::vector<unsigned char> code;
-    EmitByte(code, 0xA9); EmitWord(code, 0x0003);            // LDA #$0003
-    EmitByte(code, 0x85); EmitByte(code, 0x90);              // STA $90
-    EmitByte(code, 0xA9); EmitWord(code, 0x0084);            // LDA #$0084
-    EmitByte(code, 0x22); EmitLong24(code, LUNCH_SFX_FROM_ACCUM);
-    EmitByte(code, 0x5C); EmitLong24(code, CLEAR_SELECTED_EVENT_SLOT_ALL);
-    return code;
-}
-
-static std::vector<unsigned char> BuildKnifePickupRoutine()
-{
-    return BuildTriplePickupRoutine();
-}
-
-static std::vector<unsigned char> BuildAxeBlockBreakerRoutine()
-{
-    std::vector<unsigned char> code;
-
-    EmitByte(code, 0x08);                                    // PHP
-    EmitByte(code, 0xC2); EmitByte(code, 0x30);              // REP #$30
-    EmitByte(code, 0xA5); EmitByte(code, 0x90);              // LDA $90
-    EmitByte(code, 0xC9); EmitWord(code, 0x0003);            // CMP #$0003
-    size_t specialMode = EmitBranch8(code, 0xF0);            // BEQ specialMode
-
-    const size_t normalMode = code.size();
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x22); EmitLong24(code, AXE_COUNTER);
-    EmitByte(code, 0x22); EmitLong24(code, AXE_ANIMATION);
-    EmitByte(code, 0x5C); EmitLong24(code, AXE_SPEED_MOVEMENT);
-
-    PatchBranch8(code, specialMode, code.size());
-    EmitByte(code, 0xA0); EmitWord(code, 0x0400);            // LDY #$0400
-
-    const size_t loop = code.size();
-    EmitByte(code, 0xC0); EmitWord(code, 0x0F00);            // CPY #$0F00
-    size_t keepScanning = EmitBranch8(code, 0x90);           // BCC keepScanning
-    size_t noHit = EmitBranch16(code);                       // BRL noHit
-    PatchBranch8(code, keepScanning, code.size());
-    EmitByte(code, 0xC4); EmitByte(code, 0xFC);              // CPY $FC
-    size_t nextSameSlot = EmitBranch8(code, 0xF0);           // BEQ nextSlot
-
-    EmitByte(code, 0xB9); EmitWord(code, 0x0010);            // LDA $10,y
-    EmitByte(code, 0xC9); EmitWord(code, 0x002F);            // CMP #$002F
-    size_t possibleBlock2F = EmitBranch8(code, 0xF0);
-    EmitByte(code, 0xC9); EmitWord(code, 0x0037);            // CMP #$0037
-    size_t possibleBlock37 = EmitBranch8(code, 0xF0);
-    EmitByte(code, 0xC9); EmitWord(code, 0x0064);            // CMP #$0064
-    size_t possibleBlock64 = EmitBranch8(code, 0xF0);
-    EmitByte(code, 0xC9); EmitWord(code, 0x0065);            // CMP #$0065
-    size_t nextNotBlock = EmitBranch8(code, 0xD0);           // BNE nextSlot
-
-    const size_t possibleBlock = code.size();
-    PatchBranch8(code, possibleBlock2F, possibleBlock);
-    PatchBranch8(code, possibleBlock37, possibleBlock);
-    PatchBranch8(code, possibleBlock64, possibleBlock);
-
-    EmitByte(code, 0xB9); EmitWord(code, 0x000A);            // LDA $0A,y
-    EmitByte(code, 0x29); EmitWord(code, 0xFFF0);            // AND #$FFF0
-    EmitByte(code, 0x85); EmitByte(code, 0x00);              // STA $00
-    EmitByte(code, 0xB5); EmitByte(code, 0x0A);              // LDA $0A,x
-    EmitByte(code, 0x29); EmitWord(code, 0xFFF0);            // AND #$FFF0
-    EmitByte(code, 0xC5); EmitByte(code, 0x00);              // CMP $00
-    size_t nextXMiss = EmitBranch8(code, 0xD0);              // BNE nextSlot
-
-    EmitByte(code, 0xB9); EmitWord(code, 0x000E);            // LDA $0E,y
-    EmitByte(code, 0x29); EmitWord(code, 0xFFF0);            // AND #$FFF0
-    EmitByte(code, 0x85); EmitByte(code, 0x00);              // STA $00
-    EmitByte(code, 0xB5); EmitByte(code, 0x0E);              // LDA $0E,x
-    EmitByte(code, 0x29); EmitWord(code, 0xFFF0);            // AND #$FFF0
-    EmitByte(code, 0xC5); EmitByte(code, 0x00);              // CMP $00
-    size_t nextYMiss = EmitBranch8(code, 0xD0);              // BNE nextSlot
-
-    EmitByte(code, 0xDA);                                    // PHX
-    EmitByte(code, 0xBB);                                    // TYX
-    EmitByte(code, 0x22); EmitLong24(code, CRUMBLE_BLOCK_BURN);
-    EmitByte(code, 0xFA);                                    // PLX
-    EmitByte(code, 0x28);                                    // PLP
-    EmitByte(code, 0x5C); EmitLong24(code, CLEAR_SELECTED_EVENT_SLOT_ALL);
-
-    const size_t nextSlot = code.size();
-    PatchBranch8(code, nextSameSlot, nextSlot);
-    PatchBranch8(code, nextNotBlock, nextSlot);
-    PatchBranch8(code, nextXMiss, nextSlot);
-    PatchBranch8(code, nextYMiss, nextSlot);
-    EmitByte(code, 0x98);                                    // TYA
-    EmitByte(code, 0x18);                                    // CLC
-    EmitByte(code, 0x69); EmitWord(code, 0x0040);            // ADC #$0040
-    EmitByte(code, 0xA8);                                    // TAY
-    size_t backToLoop = EmitBranch16(code);                  // BRL loop
-    PatchBranch16(code, backToLoop, loop);
-
-    PatchBranch16(code, noHit, code.size());
-    size_t toNormal = EmitBranch16(code);
-    PatchBranch16(code, toNormal, normalMode);
-
-    return code;
-}
-
-static unsigned FindFreeCodeAddress(EditorState& state, unsigned bytesNeeded)
-{
-    SC4Core& core = state.session.Core();
-    if (!core.rom || bytesNeeded == 0 || bytesNeeded > core.romSize) {
-        return 0;
-    }
-
-    const unsigned preferredStart = SNESCore::snes2pc(0x878000);
-    const unsigned starts[] = { preferredStart < core.romSize ? preferredStart : 0u, SNESCore::snes2pc(0x868000), 0u };
-    for (unsigned start : starts) {
-        if (start >= core.romSize) {
-            continue;
-        }
-        for (unsigned pc = start; pc + bytesNeeded <= core.romSize; ++pc) {
-            const unsigned startAddress = SNESCore::pc2snes(static_cast<int>(pc));
-            const unsigned endAddress = SNESCore::pc2snes(static_cast<int>(pc + bytesNeeded - 1));
-            if ((startAddress & 0xFF0000u) != (endAddress & 0xFF0000u)) {
-                pc = (pc + 0x8000u) & ~0x7FFFu;
-                if (pc == 0) {
-                    break;
-                }
-                --pc;
-                continue;
-            }
-
-            bool freeRun = true;
-            for (unsigned i = 0; i < bytesNeeded; ++i) {
-                if (core.rom[pc + i] != 0xFF) {
-                    freeRun = false;
-                    pc += i;
-                    break;
-                }
-            }
-            if (freeRun) {
-                return SNESCore::pc2snes(static_cast<int>(pc));
-            }
-        }
-    }
-
-    return 0;
-}
-
-static void WriteCode(EditorState& state, unsigned snesAddress, const std::vector<unsigned char>& code)
-{
-    const unsigned pc = SNESCore::snes2pc(static_cast<int>(snesAddress));
-    for (size_t i = 0; i < code.size(); ++i) {
-        state.session.WriteRomPc(pc + static_cast<unsigned>(i), 1, code[i]);
-    }
-}
-
-static void WriteJml(EditorState& state, unsigned hookAddress, unsigned targetAddress)
-{
-    state.session.WriteRom(hookAddress, 1, 0x5C);
-    state.session.WriteRom(hookAddress + 1, 1, targetAddress & 0xFFu);
-    state.session.WriteRom(hookAddress + 2, 1, (targetAddress >> 8) & 0xFFu);
-    state.session.WriteRom(hookAddress + 3, 1, (targetAddress >> 16) & 0xFFu);
-}
-
-static bool LooksLikeKnifePlatformRoutine(const SC4Core& core, unsigned snesAddress)
-{
-    unsigned pc = 0;
-    return TrySnesToPc(core, snesAddress, 6, pc)
-        && core.rom[pc + 0] == 0x08
-        && core.rom[pc + 1] == 0xC2
-        && core.rom[pc + 2] == 0x30
-        && core.rom[pc + 3] == 0xA5
-        && core.rom[pc + 4] == 0x90
-        && core.rom[pc + 5] == 0xD0;
-}
-
-static bool TryFindKnifePlatformRoutine(EditorState& state, unsigned& routineAddress)
-{
-    routineAddress = 0;
-    SC4Core& core = state.session.Core();
-    unsigned stubPc = 0;
-    if (TrySnesToPc(core, KNIFE_STATE_JML_STUB, 4, stubPc) && core.rom[stubPc] == 0x5C) {
-        const unsigned target = ReadRomLong24(state, KNIFE_STATE_JML_STUB + 1);
-        if (LooksLikeKnifePlatformRoutine(core, target)) {
-            routineAddress = target;
-            return true;
-        }
-    }
-
-    if (!core.rom || core.romSize < 6) {
-        return false;
-    }
-    for (unsigned pc = 0; pc + 6 < core.romSize; ++pc) {
-        const unsigned address = SNESCore::pc2snes(static_cast<int>(pc));
-        if (LooksLikeKnifePlatformRoutine(core, address)) {
-            routineAddress = address;
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool LooksLikeAxeBlockBreakerRoutine(const SC4Core& core, unsigned snesAddress)
-{
-    unsigned pc = 0;
-    return TrySnesToPc(core, snesAddress, 8, pc)
-        && core.rom[pc + 0] == 0x08
-        && core.rom[pc + 1] == 0xC2
-        && core.rom[pc + 2] == 0x30
-        && core.rom[pc + 3] == 0xA5
-        && core.rom[pc + 4] == 0x90
-        && core.rom[pc + 5] == 0xC9
-        && core.rom[pc + 6] == 0x03
-        && core.rom[pc + 7] == 0x00;
-}
-
-static bool TryFindAxeBlockBreakerRoutine(EditorState& state, unsigned& routineAddress)
-{
-    routineAddress = 0;
-    SC4Core& core = state.session.Core();
-    unsigned hookPc = 0;
-    if (TrySnesToPc(core, AXE_STATE01_HOOK, 4, hookPc) && core.rom[hookPc] == 0x5C) {
-        const unsigned target = ReadRomLong24(state, AXE_STATE01_HOOK + 1);
-        if (LooksLikeAxeBlockBreakerRoutine(core, target)) {
-            routineAddress = target;
-            return true;
-        }
-    }
-
-    if (!core.rom || core.romSize < 8) {
-        return false;
-    }
-    for (unsigned pc = 0; pc + 8 < core.romSize; ++pc) {
-        const unsigned address = SNESCore::pc2snes(static_cast<int>(pc));
-        if (LooksLikeAxeBlockBreakerRoutine(core, address)) {
-            routineAddress = address;
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool HasSimonPickupModeStoreNear(const SC4Core& core, unsigned startPc, unsigned endPc)
-{
-    endPc = endPc < core.romSize ? endPc : core.romSize;
-    for (unsigned pc = startPc; pc + 1 < endPc; ++pc) {
-        if (core.rom[pc] == 0x85 && core.rom[pc + 1] == 0x90) {
-            return true;
-        }
-        if (pc + 2 < endPc && core.rom[pc] == 0x8D && core.rom[pc + 1] == 0x90 && core.rom[pc + 2] == 0x00) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool TryKnifePickupModeAtPc(const SC4Core& core, unsigned pc, KnifePickupModeLocation& location)
-{
-    if (!CanReadRomPc(core, pc, 8) || core.rom[pc] != 0xA9) {
-        return false;
-    }
-
-    const unsigned lowByteMode = core.rom[pc + 1];
-    if ((lowByteMode == 2 || lowByteMode == 3) && HasSimonPickupModeStoreNear(core, pc + 2, pc + 12)) {
-        location.address = SNESCore::pc2snes(static_cast<int>(pc + 1));
-        location.value = lowByteMode;
-        location.byteCount = 1;
-        return true;
-    }
-
-    if (!CanReadRomPc(core, pc, 9) || core.rom[pc + 2] != 0x00) {
-        return false;
-    }
-    const unsigned wordMode = core.rom[pc + 1] | (core.rom[pc + 2] << 8);
-    if ((wordMode == 2 || wordMode == 3) && HasSimonPickupModeStoreNear(core, pc + 3, pc + 13)) {
-        location.address = SNESCore::pc2snes(static_cast<int>(pc + 1));
-        location.value = wordMode;
-        location.byteCount = 2;
-        return true;
-    }
-
-    return false;
-}
-
-static bool TryFindKnifePlatformPickupMode(EditorState& state, KnifePickupModeLocation& location)
-{
-    location = {};
-
-    SC4Core& core = state.session.Core();
-    unsigned hookPc = 0;
-    if (TrySnesToPc(core, TRIPLE_SHOT_PICKUP_JML, 4, hookPc) && core.rom[hookPc] == 0x5C) {
-        const unsigned target = ReadRomLong24(state, TRIPLE_SHOT_PICKUP_JML + 1);
-        unsigned targetPc = 0;
-        if (TrySnesToPc(core, target, 13, targetPc) && TryKnifePickupModeAtPc(core, targetPc, location)) {
-            return true;
-        }
-    }
-
-    if (!core.rom || core.romSize < 13) {
-        return false;
-    }
-
-    for (unsigned pc = 0; pc + 13 < core.romSize; ++pc) {
-        if (TryKnifePickupModeAtPc(core, pc, location)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static bool InstallTripleModePickup(EditorState& state, unsigned& pickupAddress)
-{
-    KnifePickupModeLocation pickupLocation;
-    if (TryFindKnifePlatformPickupMode(state, pickupLocation)) {
-        state.session.WriteRom(pickupLocation.address, pickupLocation.byteCount, 3);
-        pickupAddress = pickupLocation.address - 1;
-        return true;
-    }
-
-    const std::vector<unsigned char> pickupCode = BuildKnifePickupRoutine();
-    pickupAddress = FindFreeCodeAddress(state, static_cast<unsigned>(pickupCode.size()));
-    if (pickupAddress == 0) {
-        return false;
-    }
-    WriteCode(state, pickupAddress, pickupCode);
-    WriteJml(state, TRIPLE_SHOT_PICKUP_JML, pickupAddress);
-    state.session.WriteRom(TRIPLE_SHOT_PICKUP_JML + 4, 1, 0xEA);
-    state.session.WriteRom(TRIPLE_SHOT_PICKUP_JML + 5, 1, 0xEA);
-    return true;
-}
-
-static bool InstallKnifePlatformPatch(EditorState& state, unsigned& routineAddress, unsigned& pickupAddress)
-{
-    routineAddress = 0;
-    pickupAddress = 0;
-
-    if (!TryFindKnifePlatformRoutine(state, routineAddress)) {
-        const std::vector<unsigned char> sizeProbe = BuildKnifePlatformRoutine(0);
-        routineAddress = FindFreeCodeAddress(state, static_cast<unsigned>(sizeProbe.size()));
-        if (routineAddress == 0) {
-            return false;
-        }
-        WriteCode(state, routineAddress, BuildKnifePlatformRoutine(routineAddress));
-    }
-
-    WriteJml(state, KNIFE_STATE_JML_STUB, routineAddress);
-    state.session.WriteRom(KNIFE_STATE_POINTER, 2, KNIFE_STATE_JML_STUB & 0xFFFFu);
-
-    if (!InstallTripleModePickup(state, pickupAddress)) {
-        return false;
-    }
-
-    return true;
-}
-
-static bool InstallAxeBlockBreakerPatch(EditorState& state, unsigned& routineAddress, unsigned& pickupAddress)
-{
-    routineAddress = 0;
-    pickupAddress = 0;
-
-    if (!TryFindAxeBlockBreakerRoutine(state, routineAddress)) {
-        const std::vector<unsigned char> routine = BuildAxeBlockBreakerRoutine();
-        routineAddress = FindFreeCodeAddress(state, static_cast<unsigned>(routine.size()));
-        if (routineAddress == 0) {
-            return false;
-        }
-        WriteCode(state, routineAddress, routine);
-    }
-
-    WriteJml(state, AXE_STATE01_HOOK, routineAddress);
-    if (!InstallTripleModePickup(state, pickupAddress)) {
-        return false;
-    }
-
-    return true;
-}
-
-static void DrawKnifePlatformPickupProperty(EditorState& state)
-{
-    KnifePickupModeLocation modeLocation;
-    const bool hasPickupMode = TryFindKnifePlatformPickupMode(state, modeLocation);
-    unsigned routineAddress = 0;
-    const bool hasRuntime = TryFindKnifePlatformRoutine(state, routineAddress);
-    bool enabled = hasRuntime && hasPickupMode && modeLocation.value == 3;
-
-    if (ImGui::Checkbox("Knife platform pickup", &enabled)) {
-        PushUndo(state);
-        if (enabled) {
-            unsigned installedRoutine = 0;
-            unsigned installedPickup = 0;
-            if (InstallKnifePlatformPatch(state, installedRoutine, installedPickup)) {
-                routineAddress = installedRoutine;
-                modeLocation.address = installedPickup + 1;
-                modeLocation.byteCount = 2;
-                modeLocation.value = 3;
-            }
-        } else if (hasPickupMode) {
-            state.session.WriteRom(modeLocation.address, modeLocation.byteCount, 2);
-            modeLocation.value = 2;
-        }
-        state.levelRenderer.Invalidate();
-    }
-
-    if (hasRuntime && hasPickupMode) {
-        ImGui::TextDisabled("Installed at $%06X. Pickup mode value at $%06X.", routineAddress, modeLocation.address);
-    } else if (hasRuntime) {
-        ImGui::TextDisabled("Runtime found at $%06X. Checking the box will install the pickup hook.", routineAddress);
-    } else if (hasPickupMode) {
-        ImGui::TextDisabled("Pickup mode found at $%06X. Checking the box will install the knife runtime hook.", modeLocation.address);
-    } else {
-        ImGui::TextDisabled("Checking this writes the knife runtime and pickup hook into free ROM space.");
-    }
-}
-
-static void DrawAxeBlockBreakerProperty(EditorState& state)
-{
-    KnifePickupModeLocation modeLocation;
-    const bool hasPickupMode = TryFindKnifePlatformPickupMode(state, modeLocation);
-    unsigned routineAddress = 0;
-    const bool hasRuntime = TryFindAxeBlockBreakerRoutine(state, routineAddress);
-    bool enabled = hasRuntime && hasPickupMode && modeLocation.value == 3;
-
-    if (ImGui::Checkbox("Axe breaks blocks", &enabled)) {
-        PushUndo(state);
-        if (enabled) {
-            unsigned installedRoutine = 0;
-            unsigned installedPickup = 0;
-            if (InstallAxeBlockBreakerPatch(state, installedRoutine, installedPickup)) {
-                routineAddress = installedRoutine;
-            }
-        } else if (hasPickupMode) {
-            state.session.WriteRom(modeLocation.address, modeLocation.byteCount, 2);
-        }
-        state.levelRenderer.Invalidate();
-    }
-
-    if (hasRuntime && hasPickupMode) {
-        ImGui::TextDisabled("Installed at $%06X. Axe + Triple mode breaks block events.", routineAddress);
-    } else if (hasRuntime) {
-        ImGui::TextDisabled("Runtime found at $%06X. Checking this installs the Triple pickup hook.", routineAddress);
-    } else {
-        ImGui::TextDisabled("Checking this hooks thrown axes and Triple mode for breakable block events.");
-    }
-}
 
 static void DrawSelectedEventProperties(EditorState& state)
 {
@@ -1174,7 +585,7 @@ static void DrawSelectedEventProperties(EditorState& state)
         bool changed = false;
         const EventInfo beforeEdit = *event;
         int type = static_cast<int>(event->type);
-        const std::vector<std::string> eventTypes = { "Enemy", "Candle", "Object", "Special" };
+        const std::vector<std::string> eventTypes = { "entity_respawn", "Candle", "entity_presist", "Unused" };
         changed |= ComboRow("Type", type, eventTypes);
         if (type < 0) {
             type = 0;
@@ -1204,13 +615,8 @@ static void DrawSelectedEventProperties(EditorState& state)
             changed = true;
         }
         value = event->spawnIndex;
-        if (DrawEventNumberField("Spawn index", value, 2)) {
+        if (DrawEventNumberField("resp_mask presis_IDX", value, 2)) {
             event->spawnIndex = static_cast<WORD>(value);
-            changed = true;
-        }
-        value = event->match;
-        if (DrawEventNumberField("Match", value, 2)) {
-            event->match = static_cast<WORD>(value);
             changed = true;
         }
         value = event->unknown;
@@ -1218,7 +624,12 @@ static void DrawSelectedEventProperties(EditorState& state)
             event->unknown = static_cast<WORD>(value);
             changed = true;
         }
-
+        value = event->match;
+        if (DrawEventNumberField("Event IDX", value, 2)) {
+            event->match = static_cast<WORD>(value);
+            changed = true;
+        }
+        
         if (changed) {
             const EventInfo afterEdit = *event;
             *event = beforeEdit;
@@ -1227,6 +638,23 @@ static void DrawSelectedEventProperties(EditorState& state)
             state.session.SaveEvents();
             state.levelRenderer.Invalidate();
         }
+    
+        if (ImGui::CollapsingHeader("Event Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+            DrawNumberProperty(state, "Hitbox X", 1, { EVENT_HITBOX_BASE + (event->eventId) * 2 });
+            DrawNumberProperty(state, "Hitbox Y", 1, { EVENT_HITBOX_BASE + 1 + (event->eventId) * 2 });
+            DrawNumberProperty(state, "Health", 2, { EVENT_HEALTH_BASE + (event->eventId) * 2 });
+            DrawNumberProperty(state, "Damage", 1, { EVENT_DAMAGE_BASE + (event->eventId)});
+            DrawNumberProperty(state, "Hit Attributes", 2, { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2 });
+        //   DrawFlaggedWordProperty(state, "Hit Attributes", "Whip", { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2, state, 2) }, 0x0001);
+        
+            
+            DrawNumberProperty(state, "Death Animation", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId)});
+
+
+
+        }
+        
     }
 }
 
@@ -1241,8 +669,8 @@ static void DrawPlayerProperties(EditorState& state)
 
         ComboRow("Subweapon", g_propertyState.subweapon, { "Knife", "Axe", "Holy Water", "Cross" });
         DrawNumberProperty(state, "Subweapon damage", 2, { SUBWEAPON_DAMAGE_BASE + 2 * (static_cast<unsigned>(g_propertyState.subweapon) + 1) });
-        DrawKnifePlatformPickupProperty(state);
-        DrawAxeBlockBreakerProperty(state);
+//        DrawKnifePlatformPickupProperty(state);   // function is moved to ..bkp/trash.txt and the top line is dublicated and documented out here
+//        DrawAxeBlockBreakerProperty(state);
 
         static const std::vector<MovementProperty> movements = {
             { "Walking Right", { 0x80A665 }, 0x80A65F, false, true },
@@ -1279,19 +707,19 @@ static void DrawLevelProperties(EditorState& state)
 {
     if (ImGui::CollapsingHeader("Level", ImGuiTreeNodeFlags_DefaultOpen)) {
         const unsigned deathBase = state.session.Region() == 0 ? 0x81B395 : 0x81B369;
-        DrawNumberProperty(state, "Type", 2, { LevelAddress(0x868296, state, 2) });
+        DrawNumberProperty(state, "Level type", 2, { LevelAddress(0x868296, state, 2) });
         DrawNumberProperty(state, "Death level", 1, { LevelAddress(deathBase, state) });
         DrawNumberProperty(state, "Continue level", 1, { LevelAddress(0x81FBAC, state) });
         DrawNumberProperty(state, "Music", 1, { LevelAddress(0x8097C3, state) });
         DrawNumberProperty(state, "Layer mask", 2, { LevelAddress(0x85C7BE, state, 2) });
         DrawFlaggedWordProperty(state, "Layer behavior", "Layer behavior flag", { LevelAddress(0x85C846, state, 2) }, 0x8000);
         DrawNumberProperty(state, "Event direction", 1, { LevelAddress(0x80D8A3, state) });
-        DrawNumberProperty(state, "BG animation 0", 2, { LevelAddress(0x85CA82, state, 2) });
-        DrawNumberProperty(state, "BG animation 1", 2, { LevelAddress(0x85CB0A, state, 2) });
-        DrawNumberProperty(state, "Palette animation", 2, { LevelAddress(0x86946F, state, 2) });
-        DrawNumberProperty(state, "Enemy set ID", 2, { LevelAddress(0x868BCD, state, 2) });
-        DrawNumberProperty(state, "Enemy set", 2, { LevelAddress(0x868B45, state, 2) });
-        DrawCurrentLevelEnemies(state);
+       //DrawNumberProperty(state, "BG animation 0", 2, { LevelAddress(0x85CA82, state, 2) });
+       //DrawNumberProperty(state, "BG animation 1", 2, { LevelAddress(0x85CB0A, state, 2) });
+       //DrawNumberProperty(state, "Palette animation", 2, { LevelAddress(0x86946F, state, 2) });
+       //DrawNumberProperty(state, "Enemy set ID", 2, { LevelAddress(0x868BCD, state, 2) });
+       //DrawNumberProperty(state, "Enemy set", 2, { LevelAddress(0x868B45, state, 2) });
+    //     DrawCurrentLevelEnemies(state);
     }
 }
 
@@ -1309,6 +737,10 @@ static void DrawExpandedProperties(EditorState& state)
         static const std::vector<std::string> exitChecks = NumberItems(0x40);
 
         ImGui::BeginDisabled(!expanded);
+        ImGui::Separator();
+        ImGui::TextDisabled("Entrance property for each checkpoint");
+        ImGui::Separator();
+
         ComboRow("Checkpoint", g_propertyState.checkpoint, entrances);
         const unsigned entranceBase = 0xA78000 + 0x100 * static_cast<unsigned>(state.level) + 0x20 * static_cast<unsigned>(g_propertyState.checkpoint);
         DrawNumberProperty(state, "State0", 1, { entranceBase + 0x0 }, expanded);
@@ -1326,8 +758,39 @@ static void DrawExpandedProperties(EditorState& state)
         DrawNumberProperty(state, "Camera speed X", 2, { entranceBase + 0x1A }, expanded);
         DrawNumberProperty(state, "Camera speed Y", 2, { entranceBase + 0x1C }, expanded);
         DrawNumberProperty(state, "Camera pointer", 2, { entranceBase + 0x1E }, expanded);
-
         ImGui::Separator();
+
+        DrawNumberProperty(state, "Death level", 1, { entranceBase + 0x1 }, expanded);
+
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("Exit event ID 21");
+        ImGui::Separator();
+
+        ComboRow("Exit SubID", g_propertyState.exitCheck, exitChecks);
+        const unsigned exitBase = 0xA68000 + 0x40 * 0x4 * static_cast<unsigned>(state.level) + 0x4 * static_cast<unsigned>(g_propertyState.exitCheck);
+        DrawComboProperty(state, "Exit type", g_propertyState.exitType, exitTypes, 1, { exitBase + 0x0 }, expanded);
+        //DrawNumberProperty(state, "Exit type value", 1, { exitBase + 0x0 }, expanded);
+        DrawNumberProperty(state, "Exit cmp value Y", 2, { exitBase + 0x2 }, expanded); 
+        DrawNumberProperty(state, "Transit num for transit", 1, { exitBase + 0x1 }, expanded);
+        
+        ImGui::TextDisabled("Exit level transit");
+        ImGui::Separator();
+
+        ComboRow("Next level checkpoint", g_propertyState.nextLevelDirection, entrances);
+        const unsigned transitionBase = 0xA0C000 + 0x10 * static_cast<unsigned>(state.level) + 0x2 * static_cast<unsigned>(g_propertyState.nextLevelDirection);
+        DrawNumberProperty(state, "Transit num of event", 1, { transitionBase + 0x1 }, expanded);
+        DrawNumberProperty(state, "Next level", 1, { transitionBase + 0x0 }, expanded);
+ 
+        
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("Camlock event ID 65");
+        ImGui::Separator();
+
         ComboRow("Camera lock", g_propertyState.cameraLock, cameraLocks);
         const unsigned lockBase = 0xA58000 + 0xC * 0x20 * static_cast<unsigned>(state.level) + 0xC * static_cast<unsigned>(g_propertyState.cameraLock);
         DrawNumberProperty(state, "Lock direction", 2, { lockBase + 0x0 }, expanded);
@@ -1336,22 +799,8 @@ static void DrawExpandedProperties(EditorState& state)
         DrawNumberProperty(state, "Lock cmp value", 2, { lockBase + 0x6 }, expanded);
         DrawNumberProperty(state, "Lock store value", 2, { lockBase + 0x8 }, expanded);
         DrawNumberProperty(state, "Lock store addr", 2, { lockBase + 0xA }, expanded);
-
-        ImGui::Separator();
-        ComboRow("Next level direction", g_propertyState.nextLevelDirection, entrances);
-        const unsigned transitionBase = 0xA0C000 + 0x10 * static_cast<unsigned>(state.level) + 0x2 * static_cast<unsigned>(g_propertyState.nextLevelDirection);
-        DrawNumberProperty(state, "Next level", 1, { transitionBase + 0x0 }, expanded);
-        DrawNumberProperty(state, "Entrance num", 1, { transitionBase + 0x1 }, expanded);
-        DrawNumberProperty(state, "Death num", 1, { entranceBase + 0x1 }, expanded);
-
-        ImGui::Separator();
-        ComboRow("Exit check", g_propertyState.exitCheck, exitChecks);
-        const unsigned exitBase = 0xA68000 + 0x40 * 0x4 * static_cast<unsigned>(state.level) + 0x4 * static_cast<unsigned>(g_propertyState.exitCheck);
-        DrawComboProperty(state, "Exit type", g_propertyState.exitType, exitTypes, 1, { exitBase + 0x0 }, expanded);
-        DrawNumberProperty(state, "Exit type value", 1, { exitBase + 0x0 }, expanded);
-        DrawNumberProperty(state, "Exit num", 1, { exitBase + 0x1 }, expanded);
-        DrawNumberProperty(state, "Exit cmp value", 2, { exitBase + 0x2 }, expanded);
         ImGui::EndDisabled();
+    
     }
 }
 
