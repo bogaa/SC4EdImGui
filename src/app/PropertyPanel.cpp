@@ -41,6 +41,7 @@ static constexpr unsigned LEVEL_PALETTE_ANIMATION_POINTER_BASE = 0x86946f;
 
 // data tables event
 static constexpr unsigned SUBWEAPON_DAMAGE_BASE = 0x81A6F8; 
+static constexpr unsigned EVENT_BREAKABLE_WALL_ITEM_BASE = 0x81A81A;
 static constexpr unsigned EVENT_HITBOX_BASE = 0x81ab00;
 static constexpr unsigned EVENT_HEALTH_BASE = 0x81ac00;
 static constexpr unsigned EVENT_HIT_ATTRIBUTE_BASE = 0x81ad00; // 01 hurt, 04 whip hitable, 08 collect able also needs bit 01 set, 10 ??, 20 ??, 40 rossery, 80 noDespawn 
@@ -562,7 +563,7 @@ static void DrawSelectedEventProperties(EditorState& state)
         }
 
         ImGui::Text("%s", EventDisplayName(core, *event));
-        ImGui::TextDisabled("Event %d of %d", state.selectedEventIndex + 1, static_cast<int>(core.eventTable.size()));
+
         if (ImGui::Button("Sort Events")) {
             PushUndo(state);
             const EventInfo selectedCopy = *event;
@@ -571,15 +572,16 @@ static void DrawSelectedEventProperties(EditorState& state)
             state.levelRenderer.Invalidate();
             return;
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Slot Events")) {
-            PushUndo(state);
-            const EventInfo selectedCopy = *event;
-            state.session.SlotEvents();
-            state.selectedEventIndex = FindMatchingEventIndex(core.eventTable, selectedCopy);
-            state.levelRenderer.Invalidate();
-            return;
+       ImGui::SameLine();
+       if (ImGui::Button("Slot Events")) {
+           PushUndo(state);
+           const EventInfo selectedCopy = *event;
+           state.session.SlotEvents();
+           state.selectedEventIndex = FindMatchingEventIndex(core.eventTable, selectedCopy);
+           state.levelRenderer.Invalidate();
+           return;
         }
+       
         ImGui::Separator();
 
         bool changed = false;
@@ -609,27 +611,72 @@ static void DrawSelectedEventProperties(EditorState& state)
             event->eventId = static_cast<WORD>(value);
             changed = true;
         }
-        value = event->eventSubId;
-        if (DrawEventNumberField("Sub ID", value, 2)) {
-            event->eventSubId = static_cast<WORD>(value);
-            changed = true;
-        }
-        value = event->spawnIndex;
-        if (DrawEventNumberField("resp_mask presis_IDX", value, 2)) {
-            event->spawnIndex = static_cast<WORD>(value);
-            changed = true;
-        }
+		value = event->eventSubId;  // Candles use subID as a mask
+            if (type == 1) {
+                if (DrawEventNumberField("Mask", value, 2)) {
+                event->eventSubId = static_cast<WORD>(value);
+                changed = true;
+                }
+            }
+            else if (type != 1) {
+                if (DrawEventNumberField("SubID", value, 2)) {
+                event->eventSubId = static_cast<WORD>(value);
+                changed = true;
+                }
+            }
         value = event->unknown;
         if (DrawEventNumberField("Unknown", value, 2)) {
             event->unknown = static_cast<WORD>(value);
             changed = true;
         }
-        value = event->match;
-        if (DrawEventNumberField("Event IDX", value, 2)) {
-            event->match = static_cast<WORD>(value);
-            changed = true;
+        value = event->match;        
+            if (type == 0) {        
+                if (DrawEventNumberField("Mask", value, 2)) {
+                event->match = static_cast<WORD>(value);
+                changed = true;
+                }
+            }
+            else if (type >= 1) {   // candles and respawning events use a index table to mark if they should respawn or not. 
+                if (DrawEventNumberField("Spawn index", value, 2)) {
+                event->match = static_cast<WORD>(value);
+                changed = true;
+                }
+            }
+        //value = event->spawnIndex;          //FIXME Does not show current event count.. shows on top so why bother.
+        //if (DrawEventNumberField("Current Event", value, 2)) {
+        //    event->spawnIndex = static_cast<WORD>(value);
+        ////    state.selectedEventIndex = static_cast<WORD>(value);
+        //    changed = true;
+        //}
+
+            ImGui::TextDisabled("Event %d of %d", state.selectedEventIndex + 1, static_cast<int>(core.eventTable.size()));
+        if (ImGui::Button("Prev Event")) {
+            const int total = static_cast<int>(core.eventTable.size());
+            if (total > 0) {
+                if (state.selectedEventIndex < 0) {
+                    state.selectedEventIndex = 0;                
+                }
+                else {
+                    state.selectedEventIndex = (state.selectedEventIndex - 1) % total;
+                }
+                state.levelRenderer.Invalidate();
+            }
         }
-        
+        ImGui::SameLine();
+        if (ImGui::Button("Next Event")) {
+            const int total = static_cast<int>(core.eventTable.size());
+            if (total > 0) {
+                if (state.selectedEventIndex < 0) {
+                    state.selectedEventIndex = 0;
+                    state.selectedEventIndex >= int(core.eventTable.size());
+                }
+                else {
+                    state.selectedEventIndex = (state.selectedEventIndex + 1) % total;
+                }
+                state.levelRenderer.Invalidate();
+            }
+        }
+
         if (changed) {
             const EventInfo afterEdit = *event;
             *event = beforeEdit;
@@ -639,6 +686,7 @@ static void DrawSelectedEventProperties(EditorState& state)
             state.levelRenderer.Invalidate();
         }
     
+
         if (ImGui::CollapsingHeader("Event Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
 
             DrawNumberProperty(state, "Hitbox X", 1, { EVENT_HITBOX_BASE + (event->eventId) * 2 });
@@ -646,17 +694,21 @@ static void DrawSelectedEventProperties(EditorState& state)
             DrawNumberProperty(state, "Health", 2, { EVENT_HEALTH_BASE + (event->eventId) * 2 });
             DrawNumberProperty(state, "Damage", 1, { EVENT_DAMAGE_BASE + (event->eventId)});
             DrawNumberProperty(state, "Hit Attributes", 2, { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2 });
-        //   DrawFlaggedWordProperty(state, "Hit Attributes", "Whip", { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2, state, 2) }, 0x0001);
-        
-            
-            DrawNumberProperty(state, "Death Animation", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId)});
-
-
+        //   DrawFlaggedWordProperty(state, "Hit Attributes", "Whip", { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2, state, 2) }, 0x0001);                   
+            if (event->eventId == 47) {
+                DrawNumberProperty(state, "Breakable Wall Item", 1, { EVENT_BREAKABLE_WALL_ITEM_BASE + (event->eventSubId) });
+            }
+            DrawNumberProperty(state, "Death spawnID !CAN CRASH ", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId) });
 
         }
         
     }
 }
+
+
+
+
+
 
 static void DrawPlayerProperties(EditorState& state)
 {

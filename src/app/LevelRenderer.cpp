@@ -106,6 +106,7 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
     case 0x61: return 0xA85B;
     case 0x62: return 0xA84A;
     case 0x64: return 0xA869;
+    case 0x66: return 0xE07C;
     case 0x69: return 0x9470;
     case 0x6B: return 0x8D50;
     case 0x6C: return 0xA87F;
@@ -136,7 +137,8 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
         default: return 0;
         }
     }
-    if (event.eventId == 0x2E) {
+    
+    if (event.eventId == 0x2E) {        // render bats and moon 
         switch (event.eventSubId & 0xFF) {
         case 0x00: return 0xA507;
         case 0x01:
@@ -144,7 +146,26 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
         default: return 0;
         }
     }
-    if (event.eventId == 0x68) {
+    
+    if (event.eventId == 0x38) {        // autospawner sprites
+        switch (event.eventSubId & 0xFF) {
+        case 0x00: return 0xA507;
+        case 0x01: return 0x916B;
+        case 0x02: return 0x916B;
+        case 0x03: return 0x968B;
+        case 0x04: return 0x8C6D;
+        case 0x05: return 0x8C6D;
+        case 0x06: return 0x916B;
+        case 0x07: return 0x92FB;
+        case 0x08: return 0xE07C;
+        case 0x09: return 0x8D61;
+        case 0x0a: return 0xE07C;
+        case 0x0b: return 0x968B;
+        default: return 0;
+        }
+    }
+    
+    if (event.eventId == 0x68) {        // failling skelly rocks 
         const unsigned subId = event.eventSubId & 0xFF;
         if (subId >= 0x40 && subId <= 0x43) {
             return 0xA89A;
@@ -153,7 +174,7 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
             return 0xA884;
         }
     }
-    if (event.eventId == 0x7C) {
+    if (event.eventId == 0x7C) {        // spike gear
         const unsigned subId = event.eventSubId & 0xFF;
         if (subId >= 0x80 && subId <= 0x82) {
             return 0xE47C;
@@ -1148,7 +1169,7 @@ void LevelRenderer::DrawTileBehaviorEditor(EditorState& state)
             const bool selected = selectedTiles[tile];
             const WORD map = static_cast<WORD>(
                 (tile & (core.isMode7() ? 0xFF : 0x3FF))
-                | (core.isMode7() ? 0 : ((state.tilePaletteId & 0x7) << 10)));
+                | (core.isMode7() ? 0 : ((state.tilePaletteId & 0xf) << 10)));
             drawList->AddRectFilled(tileMin, ImVec2(tileMin.x + tileCellSize, tileMin.y + tileCellSize), IM_COL32(10, 12, 14, 255));
             DrawTilePreview(core, drawList, ImVec2(tileMin.x + 5.0f, tileMin.y + 5.0f), map, 4.0f);
             drawList->AddRect(tileMin, ImVec2(tileMin.x + tileCellSize, tileMin.y + tileCellSize), selected ? IM_COL32(255, 235, 120, 255) : IM_COL32(72, 82, 88, 190), 0.0f, 0, selected ? 2.0f : 1.0f);
