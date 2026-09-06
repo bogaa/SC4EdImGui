@@ -518,27 +518,46 @@ static void BuildDefaultDockLayout(ImGuiID dockspaceId, ImVec2 dockspaceSize)
     ImGui::DockBuilderSetNodeSize(dockspaceId, dockspaceSize);
 
     ImGuiID mainId = dockspaceId;
-    const ImGuiID bottomId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Down, 0.30f, nullptr, &mainId);
-    ImGuiID leftId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Left, 0.22f, nullptr, &mainId);
     const ImGuiID rightId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Right, 0.26f, nullptr, &mainId);
-    const ImGuiID paletteId = ImGui::DockBuilderSplitNode(leftId, ImGuiDir_Up, 0.24f, nullptr, &leftId);
-    ImGuiID leftTopId = leftId;
-    const ImGuiID leftBottomId = ImGui::DockBuilderSplitNode(leftTopId, ImGuiDir_Down, 0.56f, nullptr, &leftTopId);
-
+    const ImGuiID bottomId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Up, 0.80f, nullptr, &mainId);
+    const ImGuiID bottomRightId = ImGui::DockBuilderSplitNode(bottomId, ImGuiDir_Right, 0.26f, nullptr, &mainId);
+ 
     ImGui::DockBuilderDockWindow("Level View", mainId);
-    ImGui::DockBuilderDockWindow("Palette", paletteId);
-    ImGui::DockBuilderDockWindow("ROM", leftTopId);
-    ImGui::DockBuilderDockWindow("Level Properties", leftTopId);
-    ImGui::DockBuilderDockWindow("Navigator", leftBottomId);
-    ImGuiID bottomTopId = bottomId;
-    const ImGuiID logId = ImGui::DockBuilderSplitNode(bottomTopId, ImGuiDir_Down, 0.18f, nullptr, &bottomTopId);
-    ImGui::DockBuilderDockWindow("Tools", bottomTopId);
-    ImGui::DockBuilderDockWindow("Log", logId);
+    ImGui::DockBuilderDockWindow("Palette", bottomRightId);
+    ImGui::DockBuilderDockWindow("ROM", mainId);
+    ImGui::DockBuilderDockWindow("Level Properties", rightId);
+    ImGui::DockBuilderDockWindow("Navigator", bottomId);
+    ImGui::DockBuilderDockWindow("Tools", rightId);
+    ImGui::DockBuilderDockWindow("Log", mainId);
     ImGui::DockBuilderDockWindow("Global Properties", rightId);
-    ImGui::DockBuilderDockWindow("Selection", rightId);
-    ImGui::DockBuilderDockWindow("Internal Emulator", rightId);
-    ImGui::DockBuilderDockWindow("Help###HelpView", rightId);
+    ImGui::DockBuilderDockWindow("Selection", bottomRightId);
+    ImGui::DockBuilderDockWindow("Internal Emulator", bottomId);
+    ImGui::DockBuilderDockWindow("Help###HelpView", mainId);
     ImGui::DockBuilderFinish(dockspaceId);
+
+
+//   ImGuiID mainId = dockspaceId;
+//   const ImGuiID bottomId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Down, 0.30f, nullptr, &mainId);
+//   ImGuiID leftId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Left, 0.22f, nullptr, &mainId);
+//   const ImGuiID rightId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Right, 0.26f, nullptr, &mainId);
+//   const ImGuiID paletteId = ImGui::DockBuilderSplitNode(leftId, ImGuiDir_Up, 0.24f, nullptr, &leftId);
+//   ImGuiID leftTopId = leftId;
+//   const ImGuiID leftBottomId = ImGui::DockBuilderSplitNode(leftTopId, ImGuiDir_Down, 0.56f, nullptr, &leftTopId);
+//
+//   ImGui::DockBuilderDockWindow("Level View", mainId);
+//   ImGui::DockBuilderDockWindow("Palette", paletteId);
+//   ImGui::DockBuilderDockWindow("ROM", leftTopId);
+//   ImGui::DockBuilderDockWindow("Level Properties", leftTopId);
+//   ImGui::DockBuilderDockWindow("Navigator", leftBottomId);
+//   ImGuiID bottomTopId = bottomId;
+//   const ImGuiID logId = ImGui::DockBuilderSplitNode(bottomTopId, ImGuiDir_Down, 0.18f, nullptr, &bottomTopId);
+//   ImGui::DockBuilderDockWindow("Tools", bottomTopId);
+//   ImGui::DockBuilderDockWindow("Log", logId);
+//   ImGui::DockBuilderDockWindow("Global Properties", rightId);
+//   ImGui::DockBuilderDockWindow("Selection", rightId);
+//   ImGui::DockBuilderDockWindow("Internal Emulator", rightId);
+//   ImGui::DockBuilderDockWindow("Help###HelpView", rightId);
+//   ImGui::DockBuilderFinish(dockspaceId);
 }
 
 static int g_selectedPaletteIndex = 0;
@@ -2336,51 +2355,71 @@ struct EventPaletteTemplate {
 static const std::vector<EventPaletteTemplate>& EventPaletteTemplates()
 {
     static const std::vector<EventPaletteTemplate> templates = {
-        { "Heart", EVENT_TYPE_CANDLE, 0x18, 0, 3 },
-        { "Big Heart", EVENT_TYPE_CANDLE, 0x19, 0, 3 }, 
-        { "Knife", EVENT_TYPE_CANDLE, 0x1A, 0, 3 },
-        { "Axe", EVENT_TYPE_CANDLE, 0x1B, 0, 3 }, 
-        { "Holy Water", EVENT_TYPE_CANDLE, 0x1C, 0, 3 },
-        { "Cross", EVENT_TYPE_CANDLE, 0x1D, 0, 3 }, 
-        { "Stopwatch", EVENT_TYPE_CANDLE, 0x1E, 0, 3 },
-        { "Rosary", EVENT_TYPE_CANDLE, 0x1F, 0, 3 }, 
-        { "Potion", EVENT_TYPE_CANDLE, 0x20, 0, 3 },
-        { "Whip Upgrade", EVENT_TYPE_CANDLE, 0x21, 0, 3 }, 
-        { "Money 100", EVENT_TYPE_CANDLE, 0x22, 0, 3 },
-        { "Double", EVENT_TYPE_CANDLE, 0x23, 0, 3 }, 
-        { "Triple", EVENT_TYPE_CANDLE, 0x24, 0, 3 },
-        { "Small Meat", EVENT_TYPE_CANDLE, 0x25, 0, 3 }, 
-        { "Large Meat", EVENT_TYPE_CANDLE, 0x26, 0, 3 },
-        { "Orb", EVENT_TYPE_CANDLE, 0x27, 0, 3 }, 
-        { "1Up", EVENT_TYPE_CANDLE, 0x28, 0, 3 },
-        { "Money 300", EVENT_TYPE_CANDLE, 0x62, 0, 3 }, 
-        { "Money 500", EVENT_TYPE_CANDLE, 0xA2, 0, 3 },
-        { "Money 700", EVENT_TYPE_CANDLE, 0xE2, 0, 3 },
-
-        { "Medusa Head", EVENT_TYPE_ENEMY, 0x07, 0, 3 }, 
+        { "Projectile", EVENT_TYPE_ENEMY, 0x01, 0, 3 },
+        { "Bone", EVENT_TYPE_ENEMY, 0x02, 0, 3 },
+        { "Ring", EVENT_TYPE_ENEMY, 0x03, 0, 3 },
+        { "Platform", EVENT_TYPE_ENEMY, 0x06, 0, 3 },
+        { "Medusa Head", EVENT_TYPE_ENEMY, 0x07, 0, 3 },
         { "Ghost", EVENT_TYPE_ENEMY, 0x08, 0, 3 },
-        { "Porcupine", EVENT_TYPE_ENEMY, 0x09, 0, 3 }, 
+        { "Porcupine", EVENT_TYPE_ENEMY, 0x09, 0, 3 },
         { "Dog", EVENT_TYPE_ENEMY, 0x0A, 0, 3 },
-        { "Bone Pillar", EVENT_TYPE_ENEMY, 0x0B, 0, 3 }, 
+        { "Bone Pillar", EVENT_TYPE_ENEMY, 0x0B, 0, 3 },
         { "Bat", EVENT_TYPE_ENEMY, 0x0C, 0, 3 },
-        { "Secret Man", EVENT_TYPE_ENEMY, 0x0D, 0, 3 }, 
+        { "Secret Man", EVENT_TYPE_ENEMY, 0x0D, 0, 3 },
+        { "Candle Main", EVENT_TYPE_ENEMY, 0x0E, 0, 3 },
         { "Book Bird", EVENT_TYPE_ENEMY, 0x0F, 0, 3 },
         { "Bird", EVENT_TYPE_ENEMY, 0x10, 0, 3 }, 
         { "Skeleton", EVENT_TYPE_ENEMY, 0x11, 0, 3 },
         { "Skeleton Bone", EVENT_TYPE_ENEMY, 0x12, 0, 3 }, 
-        { "Frog", EVENT_TYPE_ENEMY, 0x30, 0, 3 },
+        { "Crusher", EVENT_TYPE_ENEMY, 0x16, 0, 3 },
+        { "Moving Platform", EVENT_TYPE_ENEMY, 0x17, 0, 3 },    
+        
+        { "Heart", EVENT_TYPE_CANDLE, 0x18, 0, 3 },
+        { "Big Heart", EVENT_TYPE_CANDLE, 0x19, 0, 3 },
+        { "Knife", EVENT_TYPE_CANDLE, 0x1A, 0, 3 },
+        { "Axe", EVENT_TYPE_CANDLE, 0x1B, 0, 3 },
+        { "Holy Water", EVENT_TYPE_CANDLE, 0x1C, 0, 3 },
+        { "Cross", EVENT_TYPE_CANDLE, 0x1D, 0, 3 },
+        { "Stopwatch", EVENT_TYPE_CANDLE, 0x1E, 0, 3 },
+        { "Rosary", EVENT_TYPE_CANDLE, 0x1F, 0, 3 },
+        { "Potion", EVENT_TYPE_CANDLE, 0x20, 0, 3 },
+        { "Whip Upgrade", EVENT_TYPE_CANDLE, 0x21, 0, 3 },
+        { "Money 100", EVENT_TYPE_CANDLE, 0x22, 0, 3 },
+        { "Double", EVENT_TYPE_CANDLE, 0x23, 0, 3 },
+        { "Triple", EVENT_TYPE_CANDLE, 0x24, 0, 3 },
+        { "Small Meat", EVENT_TYPE_CANDLE, 0x25, 0, 3 },
+        { "Large Meat", EVENT_TYPE_CANDLE, 0x26, 0, 3 },
+        { "Orb", EVENT_TYPE_CANDLE, 0x27, 0, 3 },
+        { "1Up", EVENT_TYPE_CANDLE, 0x28, 0, 3 },
+        { "Money 300", EVENT_TYPE_CANDLE, 0x62, 0, 3 },
+        { "Money 500", EVENT_TYPE_CANDLE, 0xA2, 0, 3 },
+        { "Money 700", EVENT_TYPE_CANDLE, 0xE2, 0, 3 },
+        
+        { "Wall Corpse", EVENT_TYPE_ENEMY, 0x2C, 0, 3 },
+        { "Moon", EVENT_TYPE_ENEMY, 0x2E, 0, 3 },
+        { "Frog", EVENT_TYPE_ENEMY, 0x30, 0, 3 },             
         { "Sword Skeleton", EVENT_TYPE_ENEMY, 0x31, 0, 3 }, 
         { "Hanging Snakes", EVENT_TYPE_ENEMY, 0x32, 0, 3 },
         { "Coffin Sniper", EVENT_TYPE_ENEMY, 0x33, 0, 3 }, 
         { "Mud Man", EVENT_TYPE_ENEMY, 0x34, 0, 3 },
         { "Plant", EVENT_TYPE_ENEMY, 0x35, 0, 3 }, 
         { "High Five Skelly", EVENT_TYPE_ENEMY, 0x36, 0, 3 },
+        { "Crumbling Block", EVENT_TYPE_ENEMY, 0x37, 0, 3 },
+        { "Falling Pillar", EVENT_TYPE_ENEMY, 0x39, 0, 3 },
+        { "Sinking Bridge", EVENT_TYPE_ENEMY, 0x3A, 0, 3 },
+        { "Turning Platform", EVENT_TYPE_ENEMY, 0x3B, 0, 3 },
         { "Leaf Monster", EVENT_TYPE_ENEMY, 0x3C, 0, 3 }, 
         { "Big Flame", EVENT_TYPE_ENEMY, 0x3D, 0, 3 },
         { "Gargoyle", EVENT_TYPE_ENEMY, 0x3E, 0, 3 }, 
+        { "Drip", EVENT_TYPE_ENEMY, 0x3F, 0, 3 }, 
+        { "Unused Turning Platform", EVENT_TYPE_ENEMY, 0x40, 0, 3 },
+        { "Table", EVENT_TYPE_ENEMY, 0x42, 0, 3 },
         { "Spider", EVENT_TYPE_ENEMY, 0x43, 0, 3 },
+        { "Stalactite", EVENT_TYPE_ENEMY, 0x44, 0, 3 },
+        { "Platform Spikes", EVENT_TYPE_ENEMY, 0x4A, 0, 3 },
         { "Unused Bat", EVENT_TYPE_ENEMY, 0x4B, 0, 3 }, 
         { "Fish Man Swim", EVENT_TYPE_ENEMY, 0x4C, 0, 3 },
+        { "Chandelier", EVENT_TYPE_ENEMY, 0x4D, 0, 3 },
         { "Diving Bat", EVENT_TYPE_ENEMY, 0x4E, 0, 3 }, 
         { "Unknown", EVENT_TYPE_ENEMY, 0x4F, 0, 3 },
         { "Fish Man Jump", EVENT_TYPE_ENEMY, 0x51, 0, 3 }, 
@@ -2396,13 +2435,19 @@ static const std::vector<EventPaletteTemplate>& EventPaletteTemplates()
         { "Sword Hands", EVENT_TYPE_ENEMY, 0x5C, 0, 3 }, 
         { "Bone Dragon", EVENT_TYPE_ENEMY, 0x5D, 0, 3 },
         { "Bone Dragon 2", EVENT_TYPE_ENEMY, 0x5E, 0, 3 }, 
-        { "Ectoplasm", EVENT_TYPE_ENEMY, 0x5F, 0, 3 },
+        { "Falling Dagger", EVENT_TYPE_ENEMY, 0x60, 0, 3 },
+        { "Spike Platform", EVENT_TYPE_ENEMY, 0x61, 0, 3 },
+        { "Moving Spikes", EVENT_TYPE_ENEMY, 0x62, 0, 3 },
+        { "Suck Hole", EVENT_TYPE_ENEMY, 0x63, 0, 3 },
+        { "Secret Cave Hole", EVENT_TYPE_ENEMY, 0x64, 0, 3 },
         { "Grave Hand", EVENT_TYPE_ENEMY, 0x66, 0, 3 }, 
         { "Watching Skulls", EVENT_TYPE_ENEMY, 0x68, 0, 3 },
-        { "Red Skeleton", EVENT_TYPE_ENEMY, 0x69, 0, 3 }, 
+        { "Red Skeleton", EVENT_TYPE_ENEMY, 0x69, 0, 3 },
         { "Candle Dog", EVENT_TYPE_ENEMY, 0x6B, 0, 3 },
+        { "Ceiling Skelly", EVENT_TYPE_ENEMY, 0x6C, 0, 3 },
         { "Fuzzy Ball", EVENT_TYPE_ENEMY, 0x6D, 0, 3 }, 
         { "Stealing Hand", EVENT_TYPE_ENEMY, 0x6E, 0, 3 },
+        { "Horse Head Upside Down", EVENT_TYPE_ENEMY, 0x6F, 0, 3 },
         { "Grave Digger", EVENT_TYPE_ENEMY, 0x70, 0, 3 }, 
         { "Horse Head", EVENT_TYPE_ENEMY, 0x71, 0, 3 },
         { "Eye", EVENT_TYPE_ENEMY, 0x72, 0, 3 }, 
@@ -2410,42 +2455,38 @@ static const std::vector<EventPaletteTemplate>& EventPaletteTemplates()
         { "Caterpillar", EVENT_TYPE_ENEMY, 0x74, 0, 3 }, 
         { "Shield Gargoyle", EVENT_TYPE_ENEMY, 0x75, 0, 3 },
         { "Dancing Couple", EVENT_TYPE_ENEMY, 0x76, 0, 3 }, 
+        { "Mudman Small", EVENT_TYPE_ENEMY, 0x78, 0, 3 },
+        { "Mudman Tinny", EVENT_TYPE_ENEMY, 0x79, 0, 3 },
         { "Carpet Monster", EVENT_TYPE_ENEMY, 0x7A, 0, 3 },
         { "Coffin Circle", EVENT_TYPE_ENEMY, 0x7B, 0, 3 }, 
+        { "Gear", EVENT_TYPE_ENEMY, 0x7C, 0, 3 },
         { "Headless Knight", EVENT_TYPE_ENEMY, 0x7E, 0, 3 },
         { "Rock Man", EVENT_TYPE_ENEMY, 0x7F, 0, 3 },
-
-        { "Candle Main", EVENT_TYPE_OBJECT, 0x0E, 0, 3 }, 
-        { "Ring", EVENT_TYPE_OBJECT, 0x03, 0, 3 },
-        { "Pull Bridge", EVENT_TYPE_OBJECT, 0x04, 0, 3 }, 
-        { "Platform", EVENT_TYPE_OBJECT, 0x06, 0, 3 },
+        
+        { "PullBridge", EVENT_TYPE_OBJECT, 0x04, 0, 3 },
+        { "SwitchBG", EVENT_TYPE_OBJECT, 0x05, 0, 3 },
         { "Pillar Exit", EVENT_TYPE_OBJECT, 0x14, 0, 3 }, 
-        { "Crusher", EVENT_TYPE_OBJECT, 0x16, 0, 3 },
-        { "Moving Platform", EVENT_TYPE_OBJECT, 0x17, 0, 3 }, 
-        { "Wall Corpse", EVENT_TYPE_OBJECT, 0x2C, 0, 3 },
-        { "Small Flame", EVENT_TYPE_OBJECT, 0x2D, 0, 3 }, 
-        { "Moon", EVENT_TYPE_OBJECT, 0x2E, 0, 3 },
+        { "Exit", EVENT_TYPE_OBJECT, 0x15, 0, 3 },
+        { "Boss Load", EVENT_TYPE_OBJECT, 0x2A, 0, 3 },
+        { "Iron Gate", EVENT_TYPE_OBJECT, 0x2B, 0, 3 },
+        { "Small Flame", EVENT_TYPE_OBJECT, 0x2D, 0, 3 },        
         { "Breakable Block", EVENT_TYPE_OBJECT, 0x2F, 0, 3 }, 
-        { "Crumbling Block", EVENT_TYPE_OBJECT, 0x37, 0, 3 },
-        { "Bridge Rope", EVENT_TYPE_OBJECT, 0x39, 0, 3 }, 
-        { "Falling Bridge", EVENT_TYPE_OBJECT, 0x3A, 0, 3 },
-        { "Turning Platform", EVENT_TYPE_OBJECT, 0x3B, 0, 3 }, 
-        { "Water Drip", EVENT_TYPE_OBJECT, 0x3F, 0, 3 },
-        { "Table", EVENT_TYPE_OBJECT, 0x42, 0, 3 }, 
-        { "Stalactite", EVENT_TYPE_OBJECT, 0x44, 0, 3 },
-        { "Platform Spikes", EVENT_TYPE_OBJECT, 0x4A, 0, 3 }, 
-        { "Chandelier", EVENT_TYPE_OBJECT, 0x4D, 0, 3 },
+        { "Auto Spawner", EVENT_TYPE_OBJECT, 0x38, 0, 3 },     
+        { "Big Flame", EVENT_TYPE_OBJECT, 0x3D, 0, 3 },
+        { "Cam Lock", EVENT_TYPE_OBJECT, 0x41, 0, 3 },
+        { "Unknown Falling", EVENT_TYPE_OBJECT, 0x45, 0, 3 },
+        { "Breakable Stairs", EVENT_TYPE_OBJECT, 0x46, 0, 3 },
+        { "Unknown", EVENT_TYPE_OBJECT, 0x47, 0, 3 },
+        { "Special Loader", EVENT_TYPE_OBJECT, 0x48, 0, 3 },
+        { "Vains on Fance", EVENT_TYPE_OBJECT, 0x49, 0, 3 },
+        { "Unknown", EVENT_TYPE_OBJECT, 0x4F, 0, 3 },
         { "Splash Unknown", EVENT_TYPE_OBJECT, 0x50, 0, 3 }, 
-        { "Invisible Platform", EVENT_TYPE_OBJECT, 0x55, 0, 3 },
-        { "Falling Dagger", EVENT_TYPE_OBJECT, 0x60, 0, 3 }, 
-        { "Spike Platform", EVENT_TYPE_OBJECT, 0x61, 0, 3 },
-        { "Moving Spikes", EVENT_TYPE_OBJECT, 0x62, 0, 3 }, 
-        { "Gold Platform Splash", EVENT_TYPE_OBJECT, 0x63, 0, 3 },
-        { "Secret Block Cave", EVENT_TYPE_OBJECT, 0x64, 0, 3 }, 
+        { "Bridge Robe", EVENT_TYPE_OBJECT, 0x55, 0, 3 },
+        { "Ectoplasm", EVENT_TYPE_OBJECT, 0x5F, 0, 3 },
+        { "Gold Platform Splash", EVENT_TYPE_OBJECT, 0x63, 0, 3 },  
         { "Falling Blocks", EVENT_TYPE_OBJECT, 0x65, 0, 3 },
-        { "Falling Stone", EVENT_TYPE_OBJECT, 0x6A, 0, 3 }, 
-        { "Ceiling Skelly", EVENT_TYPE_OBJECT, 0x6C, 0, 3 },
-        { "Gear", EVENT_TYPE_OBJECT, 0x7C, 0, 3 }, 
+        { "Place Holder", EVENT_TYPE_OBJECT, 0x67, 0, 3 },
+        { "Falling Debris", EVENT_TYPE_OBJECT, 0x6A, 0, 3 },
         { "Stage B", EVENT_TYPE_OBJECT, 0x7D, 0, 3 },
     };
     return templates;
@@ -2459,7 +2500,7 @@ static int EventPaletteCategory(const EventPaletteTemplate& item)
     if (item.type == EVENT_TYPE_OBJECT) {
         return 2;
     }
-    return 1;
+    return 1;   
 }
 
 static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const std::vector<std::wstring>& droppedFiles)
@@ -2480,7 +2521,7 @@ static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const
             state.editLevelMode = false;
             SC4Core& core = state.session.Core();
             if (ImGui::BeginTabBar("event-palette-tabs")) {
-                static const char* tabNames[] = { "Candles", "Enemies", "Misc" };
+                static const char* tabNames[] = { "Candles", "Sprites", "Misc" };
                 const int restoredEventTab = state.activeEventPaletteTab;
                 for (int tab = 0; tab < 3; ++tab) {
                     const ImGuiTabItemFlags flags = state.restoreEventPaletteTab && restoredEventTab == tab
@@ -2784,7 +2825,7 @@ static void DrawHelpView(EditorState& state)
             HelpRow("Import Level PNG", "Imports the selected Scratch Board image as foreground level art.");
             HelpRow("Import Background PNG", "Imports the selected Scratch Board image as background art.");
             HelpRow("Sort Events", "Sorts event data in the current level.");
-            HelpRow("Slot Events", "Assigns/rebuilds event slots for the current event data.");
+           // HelpRow("Slot Events", "Assigns/rebuilds event slots for the current event data.");
             ImGui::EndTable();
         }
     }

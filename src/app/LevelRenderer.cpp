@@ -134,7 +134,7 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
         case 0x01: return 0xA7F0;
         case 0x02: return 0xA7F9;
         case 0x03: return 0xA5A5;
-        default: return 0;
+        default:  break;
         }
     }
     
@@ -143,7 +143,7 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
         case 0x00: return 0xA507;
         case 0x01:
         case 0x02: return 0xE1E4;
-        default: return 0;
+        default:  break;
         }
     }
     
@@ -161,7 +161,7 @@ static unsigned EventAssemblyOffset(const EventInfo& event)
         case 0x09: return 0x8D61;
         case 0x0a: return 0xE07C;
         case 0x0b: return 0x968B;
-        default: return 0;
+        default:  break;
         }
     }
     
@@ -1387,8 +1387,8 @@ void LevelRenderer::HandleLevelInteractions(EditorState& state, ImVec2 imageMin,
                     PushUndo(state);
                     draggingEventIndex_ = hitEvent;
                     draggingEventCopy_ = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
-                    dragOffsetX_ = levelX - static_cast<int>(event->xpos);
-                    dragOffsetY_ = levelY - static_cast<int>(event->ypos);
+                    dragOffsetX_ = levelX - (static_cast<int>(event->xpos) & 0x3FFC);
+                    dragOffsetY_ = levelY - (static_cast<int>(event->ypos) & 0x3FFC);
 
                     if (draggingEventCopy_) {
                         EventInfo copy = *event;
@@ -1414,8 +1414,8 @@ void LevelRenderer::HandleLevelInteractions(EditorState& state, ImVec2 imageMin,
                     newX = std::clamp(((newX + 4) / 8) * 8, 0, maxX);
                     newY = std::clamp(((newY + 4) / 8) * 8, 0, maxY);
                 }
-                event->xpos = static_cast<WORD>(newX);
-                event->ypos = static_cast<WORD>(newY);
+                event->xpos = (static_cast<WORD>(newX) & 0x3FFC);
+                event->ypos = (static_cast<WORD>(newY) & 0x3FFC);
             }
         }
 
@@ -1435,8 +1435,8 @@ void LevelRenderer::HandleLevelInteractions(EditorState& state, ImVec2 imageMin,
                 event.type = drag.type;
                 event.eventId = drag.eventId;
                 event.eventSubId = drag.eventSubId;
-                event.xpos = static_cast<WORD>(std::clamp(levelX, 0, (std::max)(0, textureWidth_ - 1)));
-                event.ypos = static_cast<WORD>(std::clamp(levelY, 0, (std::max)(0, textureHeight_ - 1)));
+                event.xpos = static_cast<WORD>(std::clamp(levelX, 0, (std::max)(0, textureWidth_ - 1)) & 0x3FFC);
+                event.ypos = static_cast<WORD>(std::clamp(levelY, 0, (std::max)(0, textureHeight_ - 1)) & 0x3FFC);
                 event.match = 0;
                 event.spawnIndex = 0;
                 event.unknown = drag.unknown;
@@ -1576,8 +1576,8 @@ void LevelRenderer::DrawEventOverlay(SC4Core& core, ImDrawList* drawList, ImVec2
     float clickedDistanceSq = 14.0f * 14.0f;
     int eventIndex = 0;
     for (const auto& event : core.eventTable) {
-        const float x = imageMin.x + static_cast<float>(event.xpos) * zoom;
-        const float y = imageMin.y + static_cast<float>(event.ypos) * zoom;
+        const float x = imageMin.x + static_cast<float>(event.xpos & 0x3FFC) * zoom;
+        const float y = imageMin.y + static_cast<float>(event.ypos & 0x3FFC) * zoom;
         const bool selected = selectedEventIndex != nullptr && *selectedEventIndex == eventIndex;
         DrawEventSprite(core, event, drawList, imageMin, zoom);
         if (canSelect) {
@@ -1604,7 +1604,7 @@ void LevelRenderer::DrawEventOverlay(SC4Core& core, ImDrawList* drawList, ImVec2
 
         if (zoom >= 1.0f) {
             char label[96] = {};
-            std::snprintf(label, sizeof(label), "%s  Type %u ID %u.%u",
+            std::snprintf(label, sizeof(label), "%s",    // "%s  Type %u ID %u.%u",
                 EventDisplayName(core, event),
                 event.type,
                 event.eventId & 0xFF,
@@ -1669,14 +1669,14 @@ void LevelRenderer::DrawEventSprite(SC4Core& core, const EventInfo& event, ImDra
     if (event.type == EVENT_TYPE_CANDLE) {
         const unsigned candleOffset = ReadWordAt(core, 0x81A654);
         if (candleOffset != 0) {
-            DrawSpriteAssembly(core, drawList, imageMin, zoom, event.xpos, event.ypos, candleOffset, 0);
+            DrawSpriteAssembly(core, drawList, imageMin, zoom, (event.xpos & 0x3FFC), (event.ypos & 0x3FFC), candleOffset, 0);
         }
-
+        
         const unsigned dropId = event.eventId & 0x3F;
         if (dropId >= 0x16) {
             const unsigned dropOffset = ReadWordAt(core, 0x81A654 + ((dropId - 0x16) << 1));
             if (dropOffset != 0) {
-                DrawSpriteAssembly(core, drawList, imageMin, zoom, event.xpos, event.ypos, dropOffset, 0);
+                DrawSpriteAssembly(core, drawList, imageMin, zoom, (event.xpos & 0x3FFC), (event.ypos & 0x3FFC), dropOffset, 0);
             }
         }
         return;
@@ -1696,7 +1696,7 @@ void LevelRenderer::DrawEventSprite(SC4Core& core, const EventInfo& event, ImDra
         return;
     }
 
-    DrawSpriteAssembly(core, drawList, imageMin, zoom, event.xpos, event.ypos, assemblyOffset, slotOffset);
+    DrawSpriteAssembly(core, drawList, imageMin, zoom, (event.xpos & 0x3FFC), (event.ypos & 0x3FFC), assemblyOffset, slotOffset);
 }
 
 void LevelRenderer::DrawEventThumbnail(SC4Core& core, ImDrawList* drawList, ImVec2 min, ImVec2 max, const EventInfo& event)
@@ -2029,8 +2029,8 @@ int LevelRenderer::HitTestEvent(SC4Core& core, int levelX, int levelY) const
     int bestDistanceSq = 14 * 14;
     int eventIndex = 0;
     for (const auto& event : core.eventTable) {
-        const int dx = levelX - static_cast<int>(event.xpos);
-        const int dy = levelY - static_cast<int>(event.ypos);
+        const int dx = levelX - static_cast<int>(event.xpos & 0x3FFC);
+        const int dy = levelY - static_cast<int>(event.ypos & 0x3FFC);
         const int distanceSq = dx * dx + dy * dy;
         if (distanceSq <= bestDistanceSq) {
             bestDistanceSq = distanceSq;

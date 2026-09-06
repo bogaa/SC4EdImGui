@@ -542,10 +542,11 @@ static void DrawCurrentLevelEnemies(EditorState& state)
 
 static void DrawGeneralProperties(EditorState& state)
 {
-    if (ImGui::CollapsingHeader("Global", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Global", ImGuiTreeNodeFlags_DefaultOpen)) {      
         DrawNumberProperty(state, "Lives", 2, { 0x8094DB });
         DrawNumberProperty(state, "Continue lives", 2, { 0x8CFD9B });
-        DrawNumberProperty(state, "Timer", 2, { LevelAddress(0x85BCF8, state, 2) });
+
+    
     }
 }
 
@@ -555,7 +556,10 @@ static void DrawGeneralProperties(EditorState& state)
 static void DrawSelectedEventProperties(EditorState& state)
 {
     SC4Core& core = state.session.Core();
-    EventInfo* event = SelectedEvent(state);
+    EventInfo* event = SelectedEvent(state);   
+    
+    if (event != nullptr && event->eventId != 0) {   // Can we read from event pointer. Else it could crash the editor.
+    
     if (ImGui::CollapsingHeader("Selected Event", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (!event) {
             ImGui::TextDisabled("Click an event marker in the level view.");
@@ -573,6 +577,9 @@ static void DrawSelectedEventProperties(EditorState& state)
             return;
         }
        ImGui::SameLine();
+       
+       bool disabled = true;  // This probably just confuses and I never used it. 
+       ImGui::BeginDisabled(disabled);
        if (ImGui::Button("Slot Events")) {
            PushUndo(state);
            const EventInfo selectedCopy = *event;
@@ -581,6 +588,7 @@ static void DrawSelectedEventProperties(EditorState& state)
            state.levelRenderer.Invalidate();
            return;
         }
+       ImGui::EndDisabled();
        
         ImGui::Separator();
 
@@ -594,24 +602,25 @@ static void DrawSelectedEventProperties(EditorState& state)
         } else if (type > 3) {
             type = 3;
         }
-        event->type = static_cast<BYTE>(type);
-
-        unsigned value = event->xpos;
+        
+        event->type = (static_cast<BYTE>(type) & 0x03);
+    //    unsigned value = event->xpos;
+        unsigned value = (event->xpos) & 0x3FFC;                     // FIXME shows xpos properly.. we need to fix where it renders! May be it fixes it here too
         if (DrawEventNumberField("X", value, 2)) {
             event->xpos = static_cast<WORD>(value);
             changed = true;
         }
-        value = event->ypos;
+        value = (event->ypos) & 0x3FFC;
         if (DrawEventNumberField("Y", value, 2)) {
             event->ypos = static_cast<WORD>(value);
             changed = true;
         }
-        value = event->eventId;
+        value = (event->eventId) & 0x00FF;
         if (DrawEventNumberField("ID", value, 2)) {
             event->eventId = static_cast<WORD>(value);
             changed = true;
         }
-		value = event->eventSubId;  // Candles use subID as a mask
+		value = (event->eventSubId) & 0x00FF;  
             if (type == 1) {
                 if (DrawEventNumberField("Mask", value, 2)) {
                 event->eventSubId = static_cast<WORD>(value);
@@ -619,17 +628,17 @@ static void DrawSelectedEventProperties(EditorState& state)
                 }
             }
             else if (type != 1) {
-                if (DrawEventNumberField("SubID", value, 2)) {
+                if (DrawEventNumberField("SubID", value, 2)) {      // Candles use subID as a mask
                 event->eventSubId = static_cast<WORD>(value);
                 changed = true;
                 }
             }
-        value = event->unknown;
+        value = (event->unknown) & 0x0003;
         if (DrawEventNumberField("Unknown", value, 2)) {
             event->unknown = static_cast<WORD>(value);
             changed = true;
         }
-        value = event->match;        
+        value = (event->match) & 0x00FF;        
             if (type == 0) {        
                 if (DrawEventNumberField("Mask", value, 2)) {
                 event->match = static_cast<WORD>(value);
@@ -642,6 +651,7 @@ static void DrawSelectedEventProperties(EditorState& state)
                 changed = true;
                 }
             }
+        
         //value = event->spawnIndex;          //FIXME Does not show current event count.. shows on top so why bother.
         //if (DrawEventNumberField("Current Event", value, 2)) {
         //    event->spawnIndex = static_cast<WORD>(value);
@@ -684,24 +694,33 @@ static void DrawSelectedEventProperties(EditorState& state)
             *event = afterEdit;
             state.session.SaveEvents();
             state.levelRenderer.Invalidate();
-        }
+        }        
     
+    }
+    
+    if (ImGui::CollapsingHeader("Event Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
 
-        if (ImGui::CollapsingHeader("Event Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+        DrawNumberProperty(state, "Hitbox X", 1, { EVENT_HITBOX_BASE + (event->eventId) * 2 });
+        DrawNumberProperty(state, "Hitbox Y", 1, { EVENT_HITBOX_BASE + 1 + (event->eventId) * 2 });
+        DrawNumberProperty(state, "Health", 2, { EVENT_HEALTH_BASE + (event->eventId) * 2 });
+        DrawNumberProperty(state, "Damage", 1, { EVENT_DAMAGE_BASE + (event->eventId) });
+        DrawNumberProperty(state, "Hit Attributes", 2, { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2 });
+        
+	//	int hitAttribute = 0;
+	//	hitAttribute = static_cast<int>(state.session.ReadRom(EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2));
+    //    ImGui::CheckboxFlags("Attribute", &hitAttribute, EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2);
 
-            DrawNumberProperty(state, "Hitbox X", 1, { EVENT_HITBOX_BASE + (event->eventId) * 2 });
-            DrawNumberProperty(state, "Hitbox Y", 1, { EVENT_HITBOX_BASE + 1 + (event->eventId) * 2 });
-            DrawNumberProperty(state, "Health", 2, { EVENT_HEALTH_BASE + (event->eventId) * 2 });
-            DrawNumberProperty(state, "Damage", 1, { EVENT_DAMAGE_BASE + (event->eventId)});
-            DrawNumberProperty(state, "Hit Attributes", 2, { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2 });
-        //   DrawFlaggedWordProperty(state, "Hit Attributes", "Whip", { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2, state, 2) }, 0x0001);                   
-            if (event->eventId == 47) {
-                DrawNumberProperty(state, "Breakable Wall Item", 1, { EVENT_BREAKABLE_WALL_ITEM_BASE + (event->eventSubId) });
-            }
-            DrawNumberProperty(state, "Death spawnID !CAN CRASH ", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId) });
 
+
+        if (event->eventId == 47) {
+            DrawNumberProperty(state, "Breakable Wall Item", 1, { EVENT_BREAKABLE_WALL_ITEM_BASE + ((event->eventSubId) & 0x0F) });
         }
         
+     
+        DrawNumberProperty(state, "Death spawnID !CAN CRASH ", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId) });
+
+    
+    }
     }
 }
 
@@ -759,10 +778,14 @@ static void DrawLevelProperties(EditorState& state)
 {
     if (ImGui::CollapsingHeader("Level", ImGuiTreeNodeFlags_DefaultOpen)) {
         const unsigned deathBase = state.session.Region() == 0 ? 0x81B395 : 0x81B369;
-        DrawNumberProperty(state, "Level type", 2, { LevelAddress(0x868296, state, 2) });
+
         DrawNumberProperty(state, "Death level", 1, { LevelAddress(deathBase, state) });
         DrawNumberProperty(state, "Continue level", 1, { LevelAddress(0x81FBAC, state) });
         DrawNumberProperty(state, "Music", 1, { LevelAddress(0x8097C3, state) });
+        DrawNumberProperty(state, "Timer", 2, { LevelAddress(0x85BCF8, state, 2) });    // FIXME This is already decimal in the rom 
+        DrawNumberProperty(state, "Enemy Damage Buff", 1, { LevelAddress(0x81A88F, state, 1) });
+        
+        DrawNumberProperty(state, "Level type, layout, mode and other properties", 2, { LevelAddress(0x868296, state, 2) });
         DrawNumberProperty(state, "Layer mask", 2, { LevelAddress(0x85C7BE, state, 2) });
         DrawFlaggedWordProperty(state, "Layer behavior", "Layer behavior flag", { LevelAddress(0x85C846, state, 2) }, 0x8000);
         DrawNumberProperty(state, "Event direction", 1, { LevelAddress(0x80D8A3, state) });
@@ -771,7 +794,7 @@ static void DrawLevelProperties(EditorState& state)
        //DrawNumberProperty(state, "Palette animation", 2, { LevelAddress(0x86946F, state, 2) });
        //DrawNumberProperty(state, "Enemy set ID", 2, { LevelAddress(0x868BCD, state, 2) });
        //DrawNumberProperty(state, "Enemy set", 2, { LevelAddress(0x868B45, state, 2) });
-    //     DrawCurrentLevelEnemies(state);
+         DrawCurrentLevelEnemies(state);
     }
 }
 
