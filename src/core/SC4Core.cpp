@@ -5324,7 +5324,7 @@ void SC4Core::SaveEvents() {
 			}
 			else if (event.type == 1) {
 				// candle
-				event.eventSubId = GetEventPositionHighBits(event);
+			//	event.eventSubId = GetEventPositionHighBits(event);
 				*LPWORD(pevent + 0) = ((event.eventSubId << 12) & 0xF000) | (event.xpos & ~0xF003) | (event.type & 0x3);
 				*LPWORD(pevent + 2) = ((event.eventSubId << 8) & 0xF000) | (event.ypos & ~0xF003) | (event.unknown & 0x3);
 				*LPBYTE(pevent + 4) = (event.match & 0x00FF);

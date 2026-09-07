@@ -903,7 +903,7 @@ void LevelRenderer::DrawBlockEditor(EditorState& state)
         ImGui::InvisibleButton("cell", ImVec2(cellSize, cellSize));
         if (ImGui::IsItemHovered()) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                paintCell(cell);
+               paintCell(cell);
             } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                 copyCellToBrush(cell);
             }
@@ -1107,7 +1107,7 @@ void LevelRenderer::DrawTileBehaviorEditor(EditorState& state)
     const float tileCellSize = 42.0f;
     const float tileCellSpacing = ImGui::GetStyle().ItemSpacing.x;
     const float tileGridWidth = (std::max)(1.0f, ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize);
-    const int columns = (std::max)(1, static_cast<int>((tileGridWidth + tileCellSpacing) / (tileCellSize + tileCellSpacing)));
+    const int columns = (std::max)(1, static_cast<int>((tileGridWidth + tileCellSpacing) / (tileCellSize + tileCellSpacing)));  
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
         int delta = 0;
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
@@ -1209,6 +1209,19 @@ bool LevelRenderer::CopyAvailableTilesToClipboard(HWND hwnd, RomSession& session
             }
         }
     }
+
+    //if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) { //FIXME make block flip/mirror in draw mode.
+    //    
+    //    const unsigned blockOffset = GetBlockOffset(core, state.selectedBlock);
+    //    WORD* blockTiles = reinterpret_cast<WORD*>(core.ram + blockOffset);
+    //    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+    //        state.tileFlipX = (map & 0x4000) != 0;
+    //
+    //    } else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+    //        state.tileFlipY = (map & 0x8000) != 0;
+    //    }
+    //
+    //}
 
     return CopyPixelsToClipboard(hwnd, pixels, width, height);
 }
@@ -1367,6 +1380,7 @@ void LevelRenderer::HandleLevelInteractions(EditorState& state, ImVec2 imageMin,
                     changed |= SetBlockAtLevelPoint(core, (blockX + x) * 32, (blockY + y) * 32, block);
                 }
             }
+ 
             if (changed) {
                 Invalidate();
             }

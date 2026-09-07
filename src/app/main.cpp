@@ -26,7 +26,7 @@ struct SavedWindowPlacement {
     int y = 100;
     int width = 1440;
     int height = 900;
-    bool maximized = false;
+    bool maximized = true;
 };
 
 static SavedWindowPlacement g_exitWindowPlacement;
