@@ -2521,7 +2521,7 @@ static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const
             state.editLevelMode = false;
             SC4Core& core = state.session.Core();
             if (ImGui::BeginTabBar("event-palette-tabs")) {
-                static const char* tabNames[] = { "Candles", "Sprites", "Misc" };
+                static const char* tabNames[] = { "Candles", "Enemies", "Misc" };
                 const int restoredEventTab = state.activeEventPaletteTab;
                 for (int tab = 0; tab < 3; ++tab) {
                     const ImGuiTabItemFlags flags = state.restoreEventPaletteTab && restoredEventTab == tab
@@ -2730,6 +2730,7 @@ static void DrawHelpView(EditorState& state)
             "Use File > Open ROM... to load a Super Castlevania IV ROM.",
             "Use Navigator to choose the level and checkpoint, then inspect the result in Level View.",
             "Most editing tools are in Tools. Choose a tab there, then interact with Level View or the relevant tile/sprite preview.",
+            "The Selection tab gives you extra options when you click on events like. Exits, CamLock, breakable walls etc.",
             "Use File > Save or Ctrl+S after editing. Save As writes the current ROM to a different path.",
             "Use View > Reset Default Layout if panels are missing or docked somewhere awkward."
         });

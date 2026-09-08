@@ -3633,10 +3633,11 @@ void SC4Core::LoadTilesAndPalettes()
 
 	std::vector<DWORD> addrList;
 	if (type == 0x0) {
-		addrList.push_back(0x818715);
-		//addrList.push_back(0x818B75);
-		addrList.push_back((0x81 << 16) | *LPWORD(rom + SNESCore::snes2pc(0x8693E7 + level * 2)));
-		addrList.push_back((0x81 << 16) | *LPWORD(rom + SNESCore::snes2pc(0x86946F + level * 2)));
+		
+		addrList.push_back(0x818715);	// main sprite palette 	
+		//addrList.push_back(0x818B75);	// konami screen palette // (0x86B5F8 + level * 2) // is longPo background palette no list just code to write the value
+		addrList.push_back((0x81 << 16) | *LPWORD(rom + SNESCore::snes2pc(0x8693E7 + level * 2)));	// tile palette
+		addrList.push_back((0x81 << 16) | *LPWORD(rom + SNESCore::snes2pc(0x86946F + level * 2)));	// palette animation 
 	}
 	else if (type == 0x1) {
 		//addrList.push_back(0x8587C3);

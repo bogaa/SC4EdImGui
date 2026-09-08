@@ -703,7 +703,7 @@ namespace {
                 }
                 
                 event->type = (static_cast<BYTE>(type) & 0x03u);
-                unsigned value = (event->xpos) & 0x3FFFu;                     // FIXME shows xpos properly.. we need to fix where it renders! May be it fixes it here too
+                unsigned value = (event->xpos) & 0x3FFCu;                     // FIXME shows xpos properly.. we need to fix where it renders! May be it fixes it here too
                 if (DrawEventNumberField("X", value, 2)) {
                     event->xpos = static_cast<WORD>(value);
                     if (type == 1) {
@@ -711,7 +711,7 @@ namespace {
                     }
                     changed = true;
                 }
-                value = (event->ypos) & 0x3FFFu;
+                value = (event->ypos) & 0x3FFCu;
                 if (DrawEventNumberField("Y", value, 2)) {
                     event->ypos = static_cast<WORD>(value);
                     if (type == 1) {
@@ -728,30 +728,39 @@ namespace {
                     if (type == 1) {
                         if (DrawEventNumberField("Mask", value, 2)) {
                         event->eventSubId = static_cast<WORD>(value);
-             //           event->xpos = static_cast<WORD>((event->xpos & 0x0FFFu) | ((event->eventSubId & 0x0Fu) << 12));
-             //           event->ypos = static_cast<WORD>((event->ypos & 0x0FFFu) | ((event->eventSubId & 0xF0u) << 8));
+                        //    event->xpos = static_cast<WORD>((event->xpos & 0xC003u) | ((event->eventSubId & 0x0Fu) << 12)); FIXME I may have fixed syncing evnt bits encoding in a better way..
+                        //    event->ypos = static_cast<WORD>((event->ypos & 0xC003u) | ((event->eventSubId & 0xF0u) << 8));
                         changed = true;
                         }
+                        //      value = (event->eventSubId) & 0x00FFu;       //
+                        //      ImGui::TextDisabled("HEX %X (0x4 = Quest, 0x8 = Background, 0xC both)", value);
                     }
                     else if (type != 1) {
-                        if (DrawEventNumberField("SubID", value, 2)) {      // Candles use subID as a mask
+                        if (DrawEventNumberField("SubID", value, 2)) {       
                         event->eventSubId = static_cast<WORD>(value);
                         changed = true;
                         }
+                        ImGui::SetCursorPosX( + 20);
+                        ImGui::TextDisabled("24 to 36 Drops ItemID");
                     }
                 
-                value = (event->unknown) & 0x0003u;                       // will always be 3 never changes.. probably breaks things. 
+                value = (event->unknown) & 0x0003u;                          // will always be 3 never changes.. probably breaks things. 
                 if (DrawEventNumberField("Unknown", value, 2)) {
                     event->unknown = static_cast<WORD>(value);
                     changed = true;
                 }
                 
-                value = (event->match) & 0x00FF;        
+                value = (event->match) & 0x00FFu;        
                 if (type == 0) {        
                     if (DrawEventNumberField("Mask", value, 2)) {
                     event->match = static_cast<WORD>(value);
-                    changed = true;
+                    changed = true;                  
                     }
+                    // value = (event->match) & 0x00FFu;                    FIXME make a working bit field. 
+                    // DrawBitfieldByteProperty(state, "donno, donno, Quest, Background", {value & 0x00FF});
+                    value = (event->match) & 0x00FFu;
+                    ImGui::SetCursorPosX( + 20);
+                    ImGui::TextDisabled("0x%X (0x4 = Quest, 0x8 = Background, 0xC both)", value);
                 }
                 else if (type >= 1) {                                       // candles and respawning events use index table at WRAM 0x1500
                     if (DrawEventNumberField("Spawn mask", value, 2)) {
@@ -760,12 +769,19 @@ namespace {
                     }
                 }
                 
-                value = (event->eventId) & 0x00FFu;
+                value = (event->eventId) & 0x00FFu;                         // field with hex number as info 
+                ImGui::SetCursorPosX(+20);
                 ImGui::TextDisabled("Event ID $%X", value);
                 value = (event->eventSubId) & 0x00FFu;
 				ImGui::SameLine();
-                ImGui::TextDisabled("Sub $%X", value);
-				ImGui::Separator();
+                ImGui::TextDisabled("sub $%X", value);
+                value = (event->xpos) & 0x3FFCu;
+                ImGui::SameLine();
+                ImGui::TextDisabled("    xpos $%X", value);
+                value = (event->ypos) & 0x3FFCu;
+                ImGui::SameLine();
+                ImGui::TextDisabled("ypos $%X", value);
+                ImGui::Separator();
 
                 ImGui::TextDisabled("Event %d of %d", state.selectedEventIndex + 1, static_cast<int>(core.eventTable.size()));
                 if (ImGui::Button("Prev Event")) {
@@ -847,7 +863,7 @@ namespace {
                     const unsigned exitBase = 0xA68000 + 0x40 * 0x4 * static_cast<unsigned>(state.level) + 0x4 * static_cast<unsigned>(g_propertyState.exitCheck);
                     DrawComboProperty(state, "Exit type", g_propertyState.exitType, exitTypes, 1, { exitBase + 0x0 }, expanded);
                     //DrawNumberProperty(state, "Exit type value", 1, { exitBase + 0x0 }, expanded);
-                    DrawNumberProperty(state, "Exit cmp value Y", 2, { exitBase + 0x2 }, expanded);
+                    DrawNumberProperty(state, "Exit cmp value X or Y", 2, { exitBase + 0x2 }, expanded);
                     DrawNumberProperty(state, "Transit num for transit", 1, { exitBase + 0x1 }, expanded);
 
                     ImGui::TextDisabled("Level Transit Editor");
