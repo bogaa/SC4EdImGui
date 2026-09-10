@@ -33,13 +33,20 @@ namespace {
     static PropertyUiState g_propertyState;
     
     // data tables level
-    static constexpr unsigned LEVEL_BG_PROPERTY_MASK_BASE = 0x85C7BE; // transparency and such
-    static constexpr unsigned LEVEL_BG_SCROLL_BASE = 0x85C846;  // done different..
-    static constexpr unsigned LEVEL_TILE1_ANIMATION_POINTER_BASE = 0x85C846;
+    static constexpr unsigned LEVEL_TYPE = 0x868296;
+    static constexpr unsigned LEVEL_BG_MOD = 0x85C736;
+    static constexpr unsigned LEVEL_BG_PROPERTY_MASK_BASE = 0x85C7BE;   
+    static constexpr unsigned LEVEL_BG_SCROLL_BASE = 0x85C846;         
+    static constexpr unsigned LEVEL_TILE1_ANIMATION_POINTER_BASE = 0x85CA82;
     static constexpr unsigned LEVEL_TILE2_ANIMATION_POINTER_BASE = 0x85cb0a;
     static constexpr unsigned LEVEL_PALETTE_ANIMATION_POINTER_BASE = 0x86946f;
-    
-    // data tables event
+    static constexpr unsigned LEVEL_TIMER = 0x85BCF8;
+    static constexpr unsigned LEVEL_DAMAGE_BUFF = 0x81A88F;
+    static constexpr unsigned LEVEL_MUSIK = 0x8097C3;
+    static constexpr unsigned LEVEL_CONTINUE = 0x81FBAC;
+    static constexpr unsigned LEVEL_LOAD_DIRECTION = 0x80D8A3;
+
+    // data tables event   
     static constexpr unsigned SUBWEAPON_DAMAGE_BASE = 0x81A6F8; 
     static constexpr unsigned EVENT_BREAKABLE_WALL_ITEM_BASE = 0x81A81A;
     static constexpr unsigned EVENT_HITBOX_BASE = 0x81ab00;
@@ -740,8 +747,8 @@ namespace {
                         event->eventSubId = static_cast<WORD>(value);
                         changed = true;
                         }
-                        ImGui::SetCursorPosX( + 20);
-                        ImGui::TextDisabled("24 to 36 Drops ItemID");
+                      //  ImGui::SetCursorPosX( + 20); // infoTEXT
+                      //  ImGui::TextDisabled("24 to 36 Drops ItemID");
                     }
                 
                 value = (event->unknown) & 0x0003u;                          // will always be 3 never changes.. probably breaks things. 
@@ -759,8 +766,8 @@ namespace {
                     // value = (event->match) & 0x00FFu;                    FIXME make a working bit field. 
                     // DrawBitfieldByteProperty(state, "donno, donno, Quest, Background", {value & 0x00FF});
                     value = (event->match) & 0x00FFu;
-                    ImGui::SetCursorPosX( + 20);
-                    ImGui::TextDisabled("0x%X (0x4 = Quest, 0x8 = Background, 0xC both)", value);
+                 //   ImGui::SetCursorPosX( + 20);  // infoTEXT
+                 //   ImGui::TextDisabled("0x%X (0x4 = Quest, 0x8 = Background, 0xC both)", value);
                 }
                 else if (type >= 1) {                                       // candles and respawning events use index table at WRAM 0x1500
                     if (DrawEventNumberField("Spawn mask", value, 2)) {
@@ -955,17 +962,17 @@ namespace {
     {
         if (ImGui::CollapsingHeader("Level", ImGuiTreeNodeFlags_DefaultOpen)) {
             const unsigned deathBase = state.session.Region() == 0 ? 0x81B395 : 0x81B369;
-    
+
             DrawNumberProperty(state, "Death level", 1, { LevelAddress(deathBase, state) });
-            DrawNumberProperty(state, "Continue level", 1, { LevelAddress(0x81FBAC, state) });
-            DrawNumberProperty(state, "Music", 1, { LevelAddress(0x8097C3, state) });
-            DrawNumberProperty(state, "Timer", 2, { LevelAddress(0x85BCF8, state, 2) });    // FIXME This is already decimal in the rom 
-            DrawNumberProperty(state, "Enemy Damage Buff", 1, { LevelAddress(0x81A88F, state, 1) });
             
-            DrawNumberProperty(state, "Level type, layout, mode and other properties", 2, { LevelAddress(0x868296, state, 2) });
-            DrawNumberProperty(state, "Layer mask", 2, { LevelAddress(0x85C7BE, state, 2) });
-            DrawFlaggedWordProperty(state, "Layer behavior", "Layer behavior flag", { LevelAddress(0x85C846, state, 2) }, 0x8000);
-            DrawNumberProperty(state, "Event direction", 1, { LevelAddress(0x80D8A3, state) });
+            DrawNumberProperty(state, "Continue level", 1, { LevelAddress(LEVEL_CONTINUE, state) });
+            DrawNumberProperty(state, "Music", 1, { LevelAddress(LEVEL_MUSIK, state) });
+            DrawNumberProperty(state, "Timer", 2, { LevelAddress(LEVEL_TIMER, state, 2) });    // FIXME This is already decimal in the rom 
+            DrawNumberProperty(state, "Enemy Damage Buff", 1, { LevelAddress(LEVEL_DAMAGE_BUFF, state, 1) });            
+            DrawNumberProperty(state, "TYPE", 2, { LevelAddress(LEVEL_TYPE, state, 2) });
+            DrawNumberProperty(state, "Layer Transperent Mask", 2, { LevelAddress(LEVEL_BG_PROPERTY_MASK_BASE, state, 2) });
+            DrawFlaggedWordProperty(state, "Layer Scroll Modes", "Layer behavior flag", { LevelAddress(LEVEL_BG_SCROLL_BASE, state, 2) }, 0x8000);
+            DrawNumberProperty(state, "Event direction", 1, { LevelAddress(LEVEL_LOAD_DIRECTION, state) });
            //DrawNumberProperty(state, "BG animation 0", 2, { LevelAddress(0x85CA82, state, 2) });
            //DrawNumberProperty(state, "BG animation 1", 2, { LevelAddress(0x85CB0A, state, 2) });
            //DrawNumberProperty(state, "Palette animation", 2, { LevelAddress(0x86946F, state, 2) });

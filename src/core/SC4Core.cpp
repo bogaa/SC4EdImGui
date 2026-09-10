@@ -128,38 +128,31 @@ const WORD SC4Core::levelFormatVersion = 2;
 #define SReadDWord(offset) (*((DWORD*)(rom+SNESCore::snes2pc(offset))))
 #define SReadLpByte(offset) (((LPBYTE)(rom+SNESCore::snes2pc(offset))))
 
-const long p_layout[3] = {0x868D24, 0x868888, 0x8689B3};
-const long p_scenes[3] = {0x868D93, 0x8688F7, 0x868A22};
-const long p_blocks[3] = {0x868E02, 0x868966, 0x868A91};
-const long p_maps  [3] = {0x868E71, 0x8689D5, 0x868B00};
-const long p_collis[3] = {0x868EE0, 0x868A44, 0x868B6F};
-const long p_checkp[3] = {0x86A780, 0x86A4C5, 0x86A8E4};
-const long p_palett[3] = {0x868133, 0x86817A, 0x868180};
-const long p_font  [3] = {0x878dc9, 0x889D7E, 0x868000};
-const long p_unknow[3] = {0x86A1D5,     NULL,     NULL}; // Unknow
-const long p_gfxcfg[3] = {0x86F56F, 0x86F831, 0x86F3C3};
-const long p_gfxpos[3] = {0x86F6F7,	0x86F9FF, 0x86F730};
-const long p_events[3] = {0x80D81B, 0x85947C, 0x81AE9A};
-const long p_borders[3]= {NULL, 0x82EBE9, 0x83DE43};
-const long p_locks[3]  = {0x81B783, 0x82FAE4, 0x83F2CC};
-//const long p_properties[3] = {0x80F8F3, 0x80FB8E, 0x86E28E};
-const long p_properties[3] = { NULL, NULL, 0x86E28E };
-const long p_spriteAssembly[3] = { 0x8D8000, 0x8D8000, 0x8D8000 };
-const long p_spriteOffset[3] = { 0x86A5E4, 0x86A34D, 0x86E28E };
-const long p_objOffset[3] = { 0x86DE9B, 0x86A34D, NULL };
+const long p_layout[3] = {NULL, NULL, NULL};		
+const long p_scenes[3] = {NULL, NULL, NULL};
+const long p_blocks[3] = {NULL, NULL, NULL};
+const long p_maps  [3] = {NULL, NULL, NULL};
+const long p_collis[3] = {NULL, NULL, NULL};
+const long p_checkp[3] = {NULL, NULL, NULL};
+const long p_palett[3] = {NULL, NULL, NULL};
+const long p_font  [3] = {NULL, NULL, NULL};
+const long p_unknow[3] = {NULL, NULL, NULL}; 
+const long p_gfxcfg[3] = {NULL, NULL, NULL};
+const long p_gfxpos[3] = {NULL,	NULL, NULL};
+const long p_events[3] = {0x80D81B, 0x85947C, 0x81AE9A};	// evPointer SC4, Contra3, Gradius
+const long p_borders[3]= {NULL, NULL, NULL};
+const long p_locks[3]  = {NULL, NULL, NULL};
+const long p_properties[3] = { NULL, NULL, NULL };
+const long p_spriteAssembly[3] = { NULL, NULL, NULL };
+const long p_spriteOffset[3] = { NULL, NULL, NULL };
+const long p_objOffset[3] = { NULL, NULL, NULL };
+const long p_gfxobj[3] = { NULL, NULL, NULL };	// enemy
+const long p_gfxpal[3] = { NULL, NULL, NULL };
+//const long p_capsulepos[3] = { NULL, NULL, NULL };
 
-// enemy
-const long p_gfxobj[3] = {0x86ACEE, 0xAAB2D4, 0x888623};
-const long p_gfxpal[3] = {0x86ACF1, 0xAAB2D7, 0x888626};
-// TODO: sprite
-// TODO: misc object
-
-// capsule
-const long p_capsulepos[3] = {NULL,0x86D6F1,NULL};
-
-const long p_blayout[3] = {0x868F4F, 0x868AB3, 0x868BDE};
-const long p_bscenes[3] = {0x868FBE, 0x868B22, 0x868C4D};
-const long p_bblocks[3] = {0x86902D, 0x868B91, 0x868CBC};
+const long p_blayout[3] = { NULL, NULL, NULL };
+const long p_bscenes[3] = { NULL, NULL, NULL };
+const long p_bblocks[3] = { NULL, NULL, NULL };
 
 // collusionByteNames
 std::map<unsigned, std::string> TileTypeMap = {
@@ -169,11 +162,11 @@ std::map<unsigned, std::string> TileTypeMap = {
 	{ 0xCC, "Step(FG?)" },
 	{ 0xCE, "Platform(BG?)" },
 	{ 0xD0, "Platform Half Height" },
-	{ 0xD2, "Oneway Platform" }, // level 24 special?
+	{ 0xD2, "Oneway Platform" },					// level 24 special?
 	{ 0xD4, "Mud/Slime/Blood" },
 	{ 0xD6, "?????" },
 	{ 0xD8, "Slope 15deg Change (gold pile)" },
-	{ 0xDA, "Slope 30deg Low (2-1-1)" }, // platform rounded edge?
+	{ 0xDA, "Slope 30deg Low (2-1-1)" },			// platform rounded edge?
 	{ 0xDC, "Slope 15deg Straight (gold pile)" },
 	{ 0xDE, "Slope 30deg High (2-1-1)" },
 	{ 0xE0, "Step(BG?)" },
@@ -196,7 +189,7 @@ WORD SC4Core::GetTileType(WORD tileNum, int levelNum) {
 	unsigned l = (levelNum == -1 ? level : levelNum);
 
 	if (!expandedROM) {
-		WORD offset = *LPWORD(rom + SNESCore::snes2pc(0x85C2D0) + 2 * l);
+		WORD offset = *LPWORD(rom + SNESCore::snes2pc(0x85C2D0) + 2 * l);						// SC4 Collusion Table pointers
 		WORD minValue = *LPWORD(rom + SNESCore::snes2pc(0x850000 + offset + (0xC8 - 0xC8)));
 		WORD maxValue = *LPWORD(rom + SNESCore::snes2pc(0x850000 + offset + (0xE4 - 0xC8)));
 

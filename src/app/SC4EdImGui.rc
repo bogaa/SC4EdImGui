@@ -1,0 +1,3 @@
+#include "resource.h"
+
+IDI_SC4EDIMGUI ICON "SC4EdImGUI.ico"

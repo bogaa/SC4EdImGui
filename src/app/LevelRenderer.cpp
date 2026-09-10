@@ -509,16 +509,22 @@ void LevelRenderer::Draw(ImVec2 available, EditorState& state)
         return;
     }
     RomSession& session = state.session;
-    const float zoom = state.zoom;
+    float zoom = state.zoom;
 
     ImGui::BeginChild("level-scroll", available, false, ImGuiWindowFlags_HorizontalScrollbar);
     if (state.internalEmulatorRunning && state.followInternalEmulatorCamera && state.hasInternalEmulatorCamera) {
-        const float targetX = static_cast<float>(state.internalEmulatorCameraX) * zoom;
-        const float targetY = static_cast<float>(state.internalEmulatorCameraY) * zoom;
-        ImGui::SetScrollX(std::clamp(targetX, 0.0f, ImGui::GetScrollMaxX()));
-        ImGui::SetScrollY(std::clamp(targetY, 0.0f, ImGui::GetScrollMaxY()));
+      //  const float targetX = static_cast<float>(state.internalEmulatorCameraX) * zoom;
+      //  const float targetY = static_cast<float>(state.internalEmulatorCameraY) * zoom;
+      //  ImGui::SetScrollX(std::clamp(targetX, 0.0f, ImGui::GetScrollMaxX()));
+      //  ImGui::SetScrollY(std::clamp(targetY, 0.0f, ImGui::GetScrollMaxY()));
     }
     const bool levelHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    if (levelHovered && ImGui::GetIO().MouseWheel != 0.0f) {
+        const float wheel = ImGui::GetIO().MouseWheel;
+        state.zoom = std::clamp(state.zoom + wheel * 0.1f, 1.0f, 4.0f);
+        zoom = state.zoom;
+        ImGui::SetScrollY(ImGui::GetScrollY());
+    }
     if (levelHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
         middlePanActive_ = true;
     }
@@ -662,7 +668,7 @@ bool LevelRenderer::DrawBlockPalette(RomSession& session, uint16_t* selectedBloc
 
     bool selectionChanged = false;
 
-    ImGui::Text("Selected block: %u", static_cast<unsigned>(*selectedBlock));
+    ImGui::Text("Selected block: %u", (static_cast<unsigned>(*selectedBlock)) & 0x3fffu);
     ImGui::SameLine();
     ImGui::TextDisabled("%d blocks", blockCount);
 
@@ -1210,19 +1216,6 @@ bool LevelRenderer::CopyAvailableTilesToClipboard(HWND hwnd, RomSession& session
         }
     }
 
-    //if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) { //FIXME make block flip/mirror in draw mode.
-    //    
-    //    const unsigned blockOffset = GetBlockOffset(core, state.selectedBlock);
-    //    WORD* blockTiles = reinterpret_cast<WORD*>(core.ram + blockOffset);
-    //    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-    //        state.tileFlipX = (map & 0x4000) != 0;
-    //
-    //    } else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-    //        state.tileFlipY = (map & 0x8000) != 0;
-    //    }
-    //
-    //}
-
     return CopyPixelsToClipboard(hwnd, pixels, width, height);
 }
 
@@ -1320,17 +1313,30 @@ void LevelRenderer::HandleLevelInteractions(EditorState& state, ImVec2 imageMin,
         const int blockY = levelY >> 5;
         uint16_t sampledBlock = 0;
         if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && GetBlockAtLevelPoint(core, levelX, levelY, sampledBlock)) {
-            state.selectedBlock = sampledBlock;
-            state.blockBrushWidth = 1;
-            state.blockBrushHeight = 1;
-            state.blockBrush.assign(1, sampledBlock);
-            selectingBlockBrush_ = true;
-            blockBrushStartX_ = blockX;
-            blockBrushStartY_ = blockY;
-            blockBrushCurrentX_ = blockX;
-            blockBrushCurrentY_ = blockY;
+            if ((sampledBlock & 0x3FFFu) == (state.selectedBlock & 0x3FFFu)) {
+                const uint16_t nextFlags = static_cast<uint16_t>((state.selectedBlock + 0x4000u) & 0xC000u);
+                sampledBlock = static_cast<uint16_t>((sampledBlock & 0x3FFFu) | nextFlags);
+
+                // uint16_t mirrorMask = 0x4000;
+                // if (core.type == 1) {
+                //     mirrorMask = (0x4000u) ^ sampledBlock;
+                // }
+                // sampledBlock = static_cast<uint16_t>(state.selectedBlock | mirrorMask);
+            }
+
+            if (sampledBlock != state.selectedBlock) {
+                state.selectedBlock = (sampledBlock);
+                state.blockBrushWidth = 1;
+                state.blockBrushHeight = 1;
+                state.blockBrush.assign(1, sampledBlock);
+                selectingBlockBrush_ = true;
+                blockBrushStartX_ = blockX;
+                blockBrushStartY_ = blockY;
+                blockBrushCurrentX_ = blockX;
+                blockBrushCurrentY_ = blockY;
+            }
         }
-        if (selectingBlockBrush_ && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+        if (selectingBlockBrush_ && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {       // selects a range of blocks for the brush
             const int maxBlockX = (std::max)(0, static_cast<int>(core.levelWidth) * 8 - 1);
             const int maxBlockY = (std::max)(0, static_cast<int>(core.levelHeight) * 8 - 1);
             blockBrushCurrentX_ = std::clamp(blockX, 0, maxBlockX);
@@ -1345,19 +1351,21 @@ void LevelRenderer::HandleLevelInteractions(EditorState& state, ImVec2 imageMin,
             const int width = maxX - minX + 1;
             const int height = maxY - minY + 1;
             if (width > 0 && height > 0) {
-                std::vector<uint16_t> brush(static_cast<size_t>(width) * static_cast<size_t>(height), state.selectedBlock);
-                for (int y = 0; y < height; ++y) {
-                    for (int x = 0; x < width; ++x) {
-                        uint16_t block = state.selectedBlock;
-                        if (GetBlockAtLevelPoint(core, (minX + x) * 32, (minY + y) * 32, block)) {
-                            brush[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)] = block;
+                if (width > 1 || height > 1) {
+                    std::vector<uint16_t> brush(static_cast<size_t>(width) * static_cast<size_t>(height), state.selectedBlock);
+                    for (int y = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x) {
+                            uint16_t block = state.selectedBlock;
+                            if (GetBlockAtLevelPoint(core, (minX + x) * 32, (minY + y) * 32, block)) {
+                                brush[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)] = block;
+                            }
                         }
                     }
+                    state.blockBrush = std::move(brush);
+                    state.selectedBlock = state.blockBrush.front();
                 }
                 state.blockBrushWidth = width;
                 state.blockBrushHeight = height;
-                state.blockBrush = std::move(brush);
-                state.selectedBlock = state.blockBrush.front();
             }
         }
 
@@ -1923,7 +1931,13 @@ void LevelRenderer::DrawBlockPreview(SC4Core& core, ImDrawList* drawList, ImVec2
             const int srcTileX = flipX ? 3 - tileX : tileX;
             const int srcTileY = flipY ? 3 - tileY : tileY;
             const unsigned tileOffset = (srcTileX << 1) + (srcTileY << 3);
-            const uint16_t tile = *reinterpret_cast<const uint16_t*>(core.ram + blockOffset + tileOffset);
+            uint16_t tile = *reinterpret_cast<const uint16_t*>(core.ram + blockOffset + tileOffset);
+            if (flipX) {
+                tile ^= 0x4000u;
+            }
+            if (flipY) {
+                tile ^= 0x8000u;
+            }
             DrawTilePreview(core, drawList, ImVec2(pos.x + tileX * 8.0f * scale, pos.y + tileY * 8.0f * scale), tile, scale, alpha);
         }
     }

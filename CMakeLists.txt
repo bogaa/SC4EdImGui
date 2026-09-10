@@ -16,6 +16,7 @@ if(NOT EXISTS "${IMGUI_DIR}/imgui.cpp")
     message(FATAL_ERROR "Dear ImGui was not found at third_party/imgui.")
 endif()
 
+
 set(APP_SOURCES
     src/app/BpsPatch.cpp
     src/app/D3D11Host.cpp
@@ -32,6 +33,7 @@ set(APP_SOURCES
     src/app/SpriteEditor.cpp
     src/app/Ui.cpp
     src/app/Win32Stubs.cpp
+    src/app/SC4EdImGui.rc
 )
 
 set(CORE_SOURCES

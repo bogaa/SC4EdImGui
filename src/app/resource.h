@@ -1,0 +1,1 @@
+#define IDI_SC4EDIMGUI 101

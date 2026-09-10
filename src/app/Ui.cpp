@@ -728,7 +728,7 @@ static void DrawPalettePanel(EditorState& state)
                     core.palCache[index]);
             }
             if (color != 15) {
-                ImGui::SameLine(0.0f, 2.0f);
+                ImGui::SameLine(0.0f, 1.8f);
             }
             ImGui::PopID();
         }
@@ -796,7 +796,7 @@ static void DrawSidebar(EditorState& state)
         }
     }
     ImGui::SliderFloat("Zoom", &state.zoom, 1.0f, 4.0f, "%.1fx");
-    int paintBlock = static_cast<int>(state.selectedBlock);
+    int paintBlock = (static_cast<int>(state.selectedBlock) & 0x3ffu);
     ImGui::SetNextItemWidth(96.0f);
     if (ImGui::InputInt("Paint block", &paintBlock, 1, 10, ImGuiInputTextFlags_AutoSelectAll)) {
         state.selectedBlock = static_cast<uint16_t>(std::clamp(paintBlock, 0, 0xFFFF));

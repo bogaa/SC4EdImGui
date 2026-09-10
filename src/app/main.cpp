@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "resource.h"   // windows, resource.h, SC4EdImGui.rc, added to make list and replaced WNDCLASSEXW
+
 static D3D11Host g_d3d;
 static std::vector<std::wstring> g_droppedFiles;
 static EditorState* g_editorState = nullptr;
@@ -193,8 +195,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand)
     g_iniPathUtf8 = WideToUtf8(g_iniPath);
     const SavedWindowPlacement savedWindow = LoadWindowPlacement(scale);
 
-    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, instance, nullptr, nullptr, nullptr, nullptr, L"SC4EdImGui", nullptr };
-    RegisterClassExW(&wc);
+   // WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, instance, nullptr, nullptr, nullptr, nullptr, L"SC4EdImGui", nullptr };
+      WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, instance, 
+                       LoadIconW(instance, MAKEINTRESOURCEW(IDI_SC4EDIMGUI)), LoadCursorW(nullptr, MAKEINTRESOURCEW(32512)),
+                       nullptr, nullptr, L"SC4EdImGui", LoadIconW(instance, MAKEINTRESOURCEW(IDI_SC4EDIMGUI)) 
+                       };
+
+
+    RegisterClassExW(&wc);    
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"SC4Ed ImGui", WS_OVERLAPPEDWINDOW,
         savedWindow.x, savedWindow.y, savedWindow.width, savedWindow.height, nullptr, nullptr, wc.hInstance, nullptr);
     if (!g_d3d.Create(hwnd)) {
