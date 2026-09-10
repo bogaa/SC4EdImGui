@@ -776,21 +776,25 @@ namespace {
                     }
                 }
                 
-                value = (event->eventId) & 0x00FFu;                         // field with hex number as info 
-                ImGui::SetCursorPosX(+20);
-                ImGui::TextDisabled("Event ID $%X", value);
-                value = (event->eventSubId) & 0x00FFu;
-				ImGui::SameLine();
-                ImGui::TextDisabled("sub $%X", value);
-                value = (event->xpos) & 0x3FFCu;
-                ImGui::SameLine();
-                ImGui::TextDisabled("    xpos $%X", value);
-                value = (event->ypos) & 0x3FFCu;
-                ImGui::SameLine();
-                ImGui::TextDisabled("ypos $%X", value);
+                if (ImGui::CollapsingHeader("HEX", ImGuiTreeNodeFlags_OpenOnArrow)) {
+                                                  
+                    //ImGui::SetCursorPosX(+20);
+                    value = (event->eventId) & 0x00FFu;
+                    ImGui::TextDisabled("   ID $%X", value);
+                    ImGui::SameLine(100.0f,0.0f);
+                    value = (event->xpos) & 0x3FFCu;                                     
+                    ImGui::TextDisabled("xPos $%X", value);
+                    
+                    //ImGui::SetCursorPosX(+20);
+                    value = (event->eventSubId) & 0x00FFu;
+                    ImGui::TextDisabled("  SubID $%X", value);
+                    ImGui::SameLine(100.0f,0.0f);
+                    value = (event->ypos) & 0x3FFCu;
+                    ImGui::TextDisabled("yPos $%X", value);
+                }
+               
                 ImGui::Separator();
-
-                ImGui::TextDisabled("Event %d of %d", state.selectedEventIndex + 1, static_cast<int>(core.eventTable.size()));
+                ImGui::TextDisabled("  Event %d of %d", state.selectedEventIndex + 1, static_cast<int>(core.eventTable.size()));
                 if (ImGui::Button("Prev Event")) {
                     const int total = static_cast<int>(core.eventTable.size());
                     if (total > 0) {
@@ -817,7 +821,8 @@ namespace {
                         state.levelRenderer.Invalidate();
                     }
                 }
-    
+                ImGui::Separator();
+
                 if (changed) {
                     const EventInfo afterEdit = *event;
                     *event = beforeEdit;
@@ -828,41 +833,26 @@ namespace {
                 }        
             
             }
-        
-            if (ImGui::CollapsingHeader("Event Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-    
-                DrawNumberProperty(state, "Hitbox X", 1, { EVENT_HITBOX_BASE + (event->eventId) * 2 });
-                DrawNumberProperty(state, "Hitbox Y", 1, { EVENT_HITBOX_BASE + 1 + (event->eventId) * 2 });
-                DrawNumberProperty(state, "Health", 2, { EVENT_HEALTH_BASE + (event->eventId) * 2 });
-                DrawNumberProperty(state, "Damage", 1, { EVENT_DAMAGE_BASE + (event->eventId) });
-               
-                ImGui::TextDisabled("Some events overwrite there attributes in ther code.");
-                DrawBitfieldByteProperty(state, "hurt subW whip col ?? ?? msk rosry noDesp", { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2 });
-             
-
-                ImGui::Separator();
-			//	ImGui::TextDisabled("Edit with cosion game might crash!");
-                DrawNumberProperty(state, "!Death spawnID (Flame)", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId) }); 
-                DrawNumberProperty(state, "!Death Movement Bits", 1, { EVENT_DEATH_MOVBITS_BASE + (event->eventId) });
-                
-                
-                
-                ImGui::Separator();
-
-                if (event->eventId == 0x2F) {
+                   
+            if (event->eventId == 0x2F) {
+                if (ImGui::CollapsingHeader("Choose Droped Item ID", ImGuiTreeNodeFlags_DefaultOpen)) {
                     DrawNumberProperty(state, "Breakable Wall Item", 1, { EVENT_BREAKABLE_WALL_ITEM_BASE + ((event->eventSubId) & 0x0F) });
+
                 }
-                
-                const bool expanded = state.session.IsExpandedRom();
-                if (!expanded) {
-                    ImGui::TextDisabled("These settings are available for expanded ROMs.");
-                }               
-                ImGui::BeginDisabled(!expanded);
-                if (event->eventId == 0x15) {      
+            }
+            
+            const bool expanded = state.session.IsExpandedRom();
+            if (!expanded) {
+                ImGui::TextDisabled("These settings are available for expanded ROMs.");
+            }
+            ImGui::BeginDisabled(!expanded);
+
+            if (event->eventId == 0x15) {
+                if (ImGui::CollapsingHeader("Exit, Level Transition Editor", ImGuiTreeNodeFlags_DefaultOpen)) {
                     static const std::vector<std::string> entrances = { "0", "1", "2", "3", "4", "5", "6", "7" };
                     static const std::vector<std::string> exitTypes = { "Init (DONT USE)", "Stairs Up", "Stairs Down", "Left", "Right" };
                     static const std::vector<std::string> exitChecks = NumberItems(0x40);
-                                   
+
                     ImGui::TextDisabled("Exit Event Editor");
                     ImGui::Separator();
 
@@ -881,17 +871,14 @@ namespace {
                     DrawNumberProperty(state, "Transit num of event", 1, { transitionBase + 0x1 }, expanded);
                     DrawNumberProperty(state, "Next level", 1, { transitionBase + 0x0 }, expanded);
 
-                    ImGui::Spacing();
-                    ImGui::Spacing();
-                
                 }
-                
-                if (event->eventId == 0x41) {
-                    
+            }
+
+            if (event->eventId == 0x41) {
+                if (ImGui::CollapsingHeader("Camlock Editor", ImGuiTreeNodeFlags_DefaultOpen)) {
                     static const std::vector<std::string> cameraLocks = NumberItems(0x20);
-                    
-                    ImGui::TextDisabled("Camlock");
-                    ImGui::Separator();
+                    static const std::vector<std::string> directionValues = { "1", "2", };
+                    static const std::vector<std::string> directionNames = { "Down Right", "Up Left"};
 
                     ComboRow("Camera lock", g_propertyState.cameraLock, cameraLocks);
                     const unsigned lockBase = 0xA58000 + 0xC * 0x20 * static_cast<unsigned>(state.level) + 0xC * static_cast<unsigned>(g_propertyState.cameraLock);
@@ -902,15 +889,27 @@ namespace {
                     DrawNumberProperty(state, "Lock store value", 2, { lockBase + 0x8 }, expanded);
                     DrawNumberProperty(state, "Lock store addr", 2, { lockBase + 0xA }, expanded);
                 }
-                ImGui::EndDisabled();
-            
+            }
+			ImGui::EndDisabled(); // end expanded ROM check
+
+            if (ImGui::CollapsingHeader("Event Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+    
+                DrawNumberProperty(state, "Hitbox X", 1, { EVENT_HITBOX_BASE + (event->eventId) * 2 });
+                DrawNumberProperty(state, "Hitbox Y", 1, { EVENT_HITBOX_BASE + 1 + (event->eventId) * 2 });
+                DrawNumberProperty(state, "Health", 2, { EVENT_HEALTH_BASE + (event->eventId) * 2 });
+                DrawNumberProperty(state, "Damage", 1, { EVENT_DAMAGE_BASE + (event->eventId) });
+               
+                ImGui::TextDisabled("Some events overwrite there attributes in ther code.");
+                DrawBitfieldByteProperty(state, "hurt subW whip col ?? ?? msk rosry noDesp", { EVENT_HIT_ATTRIBUTE_BASE + (event->eventId) * 2 });
+                ImGui::Separator();
+			//	ImGui::TextDisabled("Edit with cosion game might crash!");
+                DrawNumberProperty(state, "!Death spawnID (Flame)", 1, { EVENT_DEATH_ANIMATION_BASE + (event->eventId) }); 
+                DrawNumberProperty(state, "!Death Movement Bits", 1, { EVENT_DEATH_MOVBITS_BASE + (event->eventId) });
+                ImGui::Separator();
+
             }
         }
     }
-
-
-
-
 
 
     static void DrawPlayerProperties(EditorState& state)
