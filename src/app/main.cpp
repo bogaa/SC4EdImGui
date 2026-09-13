@@ -220,7 +220,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand)
     ImGui_ImplDX11_Init(g_d3d.Device(), g_d3d.Context());
 
     EditorState state;
-    state.activeToolTab = std::clamp(ReadIniInt(L"ToolTab", 0), 0, 7);
+    state.activeToolTab = std::clamp(ReadIniInt(L"ToolTab", 0), 0, 9);
     state.activeEventPaletteTab = std::clamp(ReadIniInt(L"EventPaletteTab", 0), 0, 2);
     state.activeSpriteTab = std::clamp(ReadIniInt(L"SpriteTab", 0), 0, 1);
     g_editorState = &state;
