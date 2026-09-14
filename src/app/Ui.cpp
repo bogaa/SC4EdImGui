@@ -7,6 +7,7 @@
 #include "HudEditor.h"
 #include "InstrumentEditor.h"
 #include "MusicEditor.h"
+#include "PlayerCharacterEditor.h"
 #include "PropertyPanel.h"
 #include "SpriteEditor.h"
 #include "Emulator.h"
@@ -2686,6 +2687,15 @@ static void DrawTools(EditorState& state, HWND hwnd, ID3D11Device* device, const
             DrawInstrumentEditor(state, hwnd, instrumentLog);
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Player Character", nullptr, toolFlags(9))) {
+            if (!state.restoreToolTab || restoredToolTab == 9) {
+                state.activeToolTab = 9;
+                state.restoreToolTab = false;
+            }
+            state.editLevelMode = false;
+            DrawPlayerCharacterEditor(state);
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
     if (!musicLog.empty()) AddLog(musicLog);
@@ -2764,7 +2774,7 @@ static void DrawHelpView(EditorState& state)
             HelpRow("ROM", "Shows the loaded file path, ROM size, header status, checksum, and current level dimensions.");
             HelpRow("Navigator", "Changes level, checkpoint, zoom, selected paint block, and visibility overlays.");
             HelpRow("Palette", "Shows all 16 palettes. Click a swatch to select it, then use the color picker to write color changes back to the ROM.");
-            HelpRow("Tools", "Holds the editing tabs: events, tiles, blocks, behavior, HUD, sprites, and scratch image import/conversion.");
+            HelpRow("Tools", "Holds the editing tabs for events, tiles, blocks, behavior, HUD, sprites, scratch images, music, instruments, and the player character.");
             HelpRow("Global Properties", "ROM-wide properties and values exposed by the property editor.");
             HelpRow("Level Properties", "Current-level properties exposed by the property editor.");
             HelpRow("Selection", "Details and editable fields for the currently selected event or object.");

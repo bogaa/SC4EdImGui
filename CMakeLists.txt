@@ -26,6 +26,7 @@ set(APP_SOURCES
     src/app/InstrumentEditor.cpp
     src/app/LevelRenderer.cpp
     src/app/MusicEditor.cpp
+    src/app/PlayerCharacterEditor.cpp
     src/app/main.cpp
     src/app/PropertyPanel.cpp
     src/app/RomInfo.cpp
